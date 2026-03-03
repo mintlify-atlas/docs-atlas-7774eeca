@@ -1,0 +1,121 @@
+{
+  "projectType": "saas",
+  "projectName": "Off Grid",
+  "projectDescription": "Privacy-first offline AI suite for mobile — chat, vision, image generation, and voice, all on-device",
+  "theme": "aspen",
+  "primaryColor": "#10b981",
+  "lightColor": "#d1fae5",
+  "darkColor": "#065f46",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/text-generation",
+              "features/vision-ai",
+              "features/image-generation",
+              "features/voice-transcription",
+              "features/document-attachments",
+              "features/tool-calling"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/model-management",
+              "guides/performance-tuning",
+              "guides/privacy-security",
+              "guides/projects-system-prompts",
+              "guides/offline-usage"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Technical Reference",
+        "groups": [
+          {
+            "group": "Architecture",
+            "pages": [
+              "technical/architecture-overview",
+              "technical/system-design",
+              "technical/state-management",
+              "technical/native-modules"
+            ]
+          },
+          {
+            "group": "Platform Details",
+            "pages": [
+              "technical/android-implementation",
+              "technical/ios-implementation",
+              "technical/hardware-acceleration"
+            ]
+          },
+          {
+            "group": "Performance",
+            "pages": [
+              "technical/performance-benchmarks",
+              "technical/memory-management",
+              "technical/quantization-guide"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Development",
+        "groups": [
+          {
+            "group": "Contributing",
+            "pages": [
+              "development/building-from-source",
+              "development/project-structure",
+              "development/testing",
+              "development/contributing-guide"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "development/design-system",
+              "development/troubleshooting",
+              "development/faq"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "On-device text generation with GGUF models (Qwen, Llama, Gemma, Phi)",
+    "Vision AI with multimodal models (SmolVLM, Qwen3-VL)",
+    "Stable Diffusion image generation (NPU-accelerated on Android, Core ML on iOS)",
+    "Whisper voice transcription with real-time speech-to-text",
+    "Document analysis with PDF text extraction",
+    "Function calling with built-in tools (web search, calculator, date/time, device info)",
+    "Complete offline operation — zero data leaves device after model download",
+    "GPU/NPU acceleration (OpenCL, Metal, Qualcomm QNN)"
+  ],
+  "publicApiSurface": [
+    "llmService.loadModel()",
+    "llmService.generateResponse()",
+    "llmService.initMultimodal()",
+    "imageGenerationService.generateImage()",
+    "whisperService.transcribeAudio()",
+    "documentService.extractPDFText()",
+    "modelManager.downloadModel()",
+    "generationService.subscribe()",
+    "activeModelService.loadTextModel()",
+    "hardware.getDeviceInfo()"
+  ]
+}
