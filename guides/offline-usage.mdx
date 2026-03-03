@@ -1,0 +1,486 @@
+---
+title: Offline Usage
+description: Using Off Grid completely offline with airplane mode
+---
+
+## Overview
+
+Off Grid is designed to work **completely offline** after initial model downloads. This guide explains what works offline, what requires network, and how to optimize for offline use.
+
+## What Works Offline
+
+From `ARCHITECTURE.md:1044-1047`, after model download:
+
+✅ **All AI inference** - Text generation, vision, image generation
+
+✅ **Conversations** - Create, edit, delete conversations
+
+✅ **Projects** - Create and manage custom system prompts
+
+✅ **Model management** - Load, unload, delete models
+
+✅ **Settings** - Change all app settings
+
+✅ **Voice transcription** - Whisper runs entirely on-device
+
+✅ **Document attachments** - Attach and analyze PDFs, code files, etc.
+
+✅ **Image generation** - Stable Diffusion runs on-device (CPU/GPU/NPU/ANE)
+
+✅ **Tool calling** - Calculator, date/time, device info tools
+
+✅ **Gallery** - View, share, delete generated images
+
+<Note>
+  **Everything works offline** except model downloads and the optional web search tool.
+</Note>
+
+## What Requires Network
+
+From `ARCHITECTURE.md:1036-1042`:
+
+### During Setup
+
+❌ **HuggingFace API** - Model metadata browsing
+
+❌ **HuggingFace CDN** - Model file downloads
+
+❌ **xororz HuggingFace repos** - Image model listings (Android)
+
+### Optional Features
+
+❌ **Web Search tool** - Requires explicit user enablement, uses Brave Search
+
+<Warning>
+  The **web search tool is disabled by default**. Enable it in Settings → Model Settings → Enabled Tools only if you need web access.
+</Warning>
+
+## Airplane Mode Usage
+
+### Complete Offline Workflow
+
+<Steps>
+  <Step title="Download Models (Requires Network)">
+    While connected to Wi-Fi:
+    - Browse and download text models (e.g., Qwen 3 0.6B)
+    - Download vision models if needed (SmolVLM-500M)
+    - Download image models if needed (Anything V5, DreamShaper)
+    - Download Whisper model for voice (auto-downloads on first use)
+  </Step>
+  
+  <Step title="Enable Airplane Mode">
+    Turn on airplane mode on your device
+  </Step>
+  
+  <Step title="Use Off Grid Normally">
+    Everything works:
+    - Load models
+    - Chat conversations
+    - Generate images
+    - Transcribe voice
+    - Attach documents
+    - Create projects
+  </Step>
+  
+  <Step title="Verify Zero Network Activity">
+    Confirm no network requests in your device's network monitor
+  </Step>
+</Steps>
+
+<Tip>
+  **Travel scenario**: Download all models you need before your flight. Use Off Grid throughout your trip with zero internet access.
+</Tip>
+
+## Storage Planning for Offline Use
+
+### Calculate Storage Needs
+
+Before going offline, ensure you have enough storage:
+
+**Text Models:**
+- Tiny (0.5-1B): 0.5-1 GB
+- Small (1-3B): 1-2 GB
+- Medium (3-7B): 2-5 GB
+- Large (7-8B): 4-8 GB
+
+**Vision Models:**
+- SmolVLM-500M: ~600 MB (model + mmproj)
+- SmolVLM-2.2B: ~2.5 GB (model + mmproj)
+- Qwen3-VL-2B: ~2.8 GB
+
+**Image Models:**
+- Android CPU (MNN): ~1.2 GB per model
+- Android NPU (QNN): ~1.0 GB per model
+- iOS Palettized: ~1 GB per model
+- iOS Full precision: ~4 GB per model
+
+**Whisper Models:**
+- Tiny: ~75 MB
+- Base: ~140 MB
+- Small: ~470 MB
+
+### Storage Planning Examples
+
+**Minimal Offline Setup (2-3 GB)**:
+- 1 text model (Qwen 3 0.6B Q4_K_M): ~500 MB
+- Whisper Tiny: ~75 MB
+- Buffer for conversations and images: ~500 MB
+
+**Balanced Offline Setup (5-7 GB)**:
+- 2 text models (Qwen 3 3B Q4_K_M + Phi-4 Mini): ~4 GB
+- 1 vision model (SmolVLM-500M): ~600 MB
+- 1 image model (Anything V5): ~1.2 GB
+- Whisper Base: ~140 MB
+- Buffer: ~1 GB
+
+**Full Offline Setup (15-20 GB)**:
+- 4 text models (variety of sizes and specializations): ~10 GB
+- 2 vision models (SmolVLM-500M + Qwen3-VL-2B): ~3.4 GB
+- 3 image models (variety of styles): ~3.6 GB
+- Whisper Small: ~470 MB
+- Buffer: ~2 GB
+
+<Steps>
+  <Step title="Check Available Storage">
+    Settings → Device Info → Storage Available
+  </Step>
+  
+  <Step title="Plan Model Downloads">
+    Choose models based on available space and use cases
+  </Step>
+  
+  <Step title="Download All Models">
+    Download while on Wi-Fi before going offline
+  </Step>
+  
+  <Step title="Monitor Storage">
+    Settings → Storage Settings → View total models storage
+  </Step>
+</Steps>
+
+## Model Selection for Offline Use
+
+### Choosing Models for Limited Storage
+
+From `ARCHITECTURE.md:950-961`, quantization trade-offs:
+
+| Priority | Model Choice | Quantization | Size (7B) | Quality |
+|----------|--------------|--------------|-----------|----------|
+| **Maximum quality** | Larger models | Q6_K, Q8_0 | 6-7.5 GB | Excellent |
+| **Balanced** | Medium models | Q4_K_M, Q5_K_M | 4-5 GB | Good-Very Good |
+| **Space-constrained** | Smaller models | Q3_K_M, Q4_K_M | 3-4 GB | Low-Med to Good |
+| **Minimum storage** | Tiny models | Q4_K_M | 0.5-2 GB | Good (for size) |
+
+### Recommended Offline Model Sets
+
+**General Purpose (Balanced)**:
+- Qwen 3 3B Q4_K_M (~2.5 GB) - Main chat model
+- SmolVLM-500M (~600 MB) - Vision tasks
+- Anything V5 (~1.2 GB) - Image generation
+- Whisper Base (~140 MB) - Voice transcription
+
+**Specialized Offline Work**:
+
+**For coding**:
+- Qwen 3 Coder A3B Q4_K_M (~2.8 GB)
+- Phi-4 Mini Q4_K_M (~2.5 GB)
+
+**For multilingual**:
+- Qwen3 7B Q4_K_M (~4.8 GB)
+- Command-R 3B Q4_K_M (~2.2 GB)
+
+**For creative writing**:
+- Gemma 3 9B Q4_K_M (~5.5 GB)
+- Llama 3.2 3B Q5_K_M (~2.8 GB)
+
+<Tip>
+  **Storage-constrained strategy**: Download one versatile model (Qwen 3 3B) that handles multiple tasks well, rather than multiple specialized models.
+</Tip>
+
+## Offline-First Features
+
+### Voice Transcription
+
+From `ARCHITECTURE.md:143-159`, Whisper runs entirely on-device:
+
+- **Multiple models** - Tiny, Base, Small (speed vs accuracy)
+- **Real-time transcription** - Streaming word-by-word results
+- **No network** - All transcription on-device
+- **Auto-download** - First use downloads model (requires network once)
+- **Multilingual** - Supports many languages
+
+**Offline workflow**:
+1. Download Whisper model while online (Settings → Voice Settings)
+2. Use voice input in airplane mode
+3. Transcription works perfectly offline
+
+### Document Attachments
+
+From `ARCHITECTURE.md:160-188`, document analysis is fully offline:
+
+- **File picker** - Native file selection
+- **PDF text extraction** - Platform-native parsers (no network)
+- **Code files** - .py, .js, .ts, .jsx, .tsx, .java, .c, .cpp, etc.
+- **Data files** - .csv, .json, .xml, .yaml, etc.
+- **Tappable badges** - Open with system viewer (QuickLook/Intent)
+
+**Offline workflow**:
+1. Attach document in chat (PDF, code file, etc.)
+2. AI reads document content
+3. Ask questions about the document
+4. All analysis happens on-device
+
+### Image Generation
+
+From `ARCHITECTURE.md:71-142`, Stable Diffusion runs entirely on-device:
+
+**Android**:
+- MNN backend (CPU, all devices)
+- QNN backend (NPU, Snapdragon 8 Gen 1+)
+
+**iOS**:
+- Core ML backend (Neural Engine acceleration)
+- Palettized models (6-bit, ~1GB)
+- Full precision models (fp16, ~4GB)
+
+**Offline workflow**:
+1. Download image model while online
+2. Generate images in airplane mode
+3. All generation on-device (CPU/GPU/NPU/ANE)
+
+### Tool Calling (Offline Tools)
+
+From `ARCHITECTURE.md:189-218`, several tools work offline:
+
+✅ **Calculator** - Safe recursive descent parser, no network
+
+✅ **Date/Time** - System date/time, no network
+
+✅ **Device Info** - Battery, storage, memory stats, no network
+
+❌ **Web Search** - Requires network (Brave Search API)
+
+<Steps>
+  <Step title="Disable Web Search for Offline">
+    Settings → Model Settings → Enabled Tools → Uncheck "web_search"
+  </Step>
+  
+  <Step title="Keep Offline Tools Enabled">
+    Leave enabled:
+    - calculator
+    - get_current_datetime
+    - get_device_info
+  </Step>
+  
+  <Step title="Use Tools Offline">
+    AI can use calculator, date/time, and device info tools without network
+  </Step>
+</Steps>
+
+## Airplane Mode Test
+
+### Verification Checklist
+
+Prove to yourself that Off Grid is truly offline:
+
+<Steps>
+  <Step title="Download Required Models">
+    While online:
+    - At least one text model
+    - Optional: vision model, image model, Whisper model
+  </Step>
+  
+  <Step title="Enable Airplane Mode">
+    Turn off all network connectivity
+  </Step>
+  
+  <Step title="Test Text Generation">
+    - Load text model
+    - Create conversation
+    - Send multiple messages
+    - Verify responses generate normally
+  </Step>
+  
+  <Step title="Test Vision (If Downloaded)">
+    - Load vision model
+    - Attach image from gallery
+    - Ask about the image
+    - Verify vision inference works
+  </Step>
+  
+  <Step title="Test Image Generation (If Downloaded)">
+    - Ensure image model is active
+    - Send image generation prompt
+    - Verify image generates offline
+  </Step>
+  
+  <Step title="Test Voice Transcription (If Downloaded)">
+    - Tap voice input button
+    - Record audio
+    - Verify transcription works
+  </Step>
+  
+  <Step title="Test Document Attachment">
+    - Attach a PDF or text file
+    - Ask questions about it
+    - Verify AI reads and responds
+  </Step>
+  
+  <Step title="Test Offline Tools">
+    - Ask for calculations
+    - Ask for current date/time
+    - Ask for device info
+    - Verify all work without web search
+  </Step>
+</Steps>
+
+<Note>
+  If any feature fails, ensure:
+  1. Model is fully downloaded (not partial)
+  2. Model is loaded (active in model selector)
+  3. Web search tool is disabled (if testing non-web tools)
+</Note>
+
+## Network Monitoring (Advanced)
+
+For technical users who want to verify zero network activity:
+
+### iOS Network Monitoring
+
+1. **Use Charles Proxy** or **Proxyman**
+2. Configure device to use proxy
+3. Enable airplane mode
+4. Use Off Grid normally
+5. Verify zero network requests in proxy logs
+
+### Android Network Monitoring
+
+1. **Use Packet Capture app** (no root required)
+2. Start packet capture
+3. Enable airplane mode
+4. Use Off Grid normally
+5. Verify zero network packets
+
+### Alternative: System Network Stats
+
+**iOS**:
+1. Settings → Cellular → Off Grid
+2. Note current data usage
+3. Use app in airplane mode
+4. Re-check data usage (should be unchanged)
+
+**Android**:
+1. Settings → Network & Internet → Data Usage → Off Grid
+2. Note current usage
+3. Use app in airplane mode
+4. Re-check usage (should be unchanged)
+
+## Privacy Benefits of Offline Use
+
+From the Privacy & Security guide, offline usage provides:
+
+✅ **Zero data exfiltration** - Impossible when network is disabled
+
+✅ **No tracking** - No telemetry or analytics can phone home
+
+✅ **Guaranteed privacy** - Prompts never leave device
+
+✅ **Air-gapped security** - Perfect for sensitive work
+
+✅ **Verifiable privacy** - You can see network is off
+
+<Tip>
+  **For maximum privacy**: Use airplane mode by default. Only enable network when downloading new models.
+</Tip>
+
+## Troubleshooting Offline Issues
+
+### Model Won't Load Offline
+
+**Symptoms**: Model fails to load in airplane mode
+
+**Solutions**:
+1. Verify model download completed (Settings → Storage Settings)
+2. Check model file exists on device
+3. Restart app and try again
+4. Re-download model while online
+
+### Vision Model Fails Without Network
+
+**Symptoms**: Vision model loads but errors on image analysis
+
+**Solutions**:
+1. Verify mmproj file downloaded (check model size includes both files)
+2. Reload model to trigger mmproj discovery
+3. Check logs for mmproj path resolution
+
+### Web Search Tool Errors
+
+**Symptoms**: Tool calling fails with network errors
+
+**Solutions**:
+1. Disable web search tool in settings
+2. Use only offline tools (calculator, date/time, device info)
+3. Model will gracefully skip web search when network unavailable
+
+### Whisper Transcription Fails
+
+**Symptoms**: Voice input doesn't transcribe offline
+
+**Solutions**:
+1. Ensure Whisper model downloaded (Settings → Voice Settings)
+2. Check model selection (Tiny, Base, or Small)
+3. Re-download Whisper model while online
+
+## Best Practices for Offline Use
+
+### Before Going Offline
+
+<Steps>
+  <Step title="Download All Required Models">
+    - Text model(s) for your use cases
+    - Vision model if you need image analysis
+    - Image model if you want to generate images
+    - Whisper model for voice input
+  </Step>
+  
+  <Step title="Test Each Model">
+    Load and test each model while online to ensure it works
+  </Step>
+  
+  <Step title="Disable Web Search">
+    Settings → Model Settings → Enabled Tools → Uncheck "web_search"
+  </Step>
+  
+  <Step title="Check Storage Space">
+    Ensure sufficient space for conversations and generated images
+  </Step>
+  
+  <Step title="Enable Airplane Mode">
+    Verify all features work in airplane mode
+  </Step>
+</Steps>
+
+### While Offline
+
+✅ **Monitor storage** - Generated images consume space
+
+✅ **Delete old conversations** - Free up space if needed
+
+✅ **Use storage cleanup** - Remove orphaned files periodically
+
+✅ **Keep device charged** - Offline AI is power-intensive
+
+### Going Back Online
+
+✅ **Download new models** if needed
+
+✅ **Check for app updates** (optional)
+
+✅ **Sync device backup** (if using iCloud/Google Drive)
+
+## Additional Resources
+
+- **Privacy Guide**: See Privacy & Security guide for detailed privacy features
+- **Model Management**: See Model Management guide for download details
+- **Architecture Reference**: Review `ARCHITECTURE.md:1036-1047` for network activity details

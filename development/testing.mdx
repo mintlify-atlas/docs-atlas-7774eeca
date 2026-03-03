@@ -1,0 +1,455 @@
+---
+title: Testing Guide
+description: Run tests and understand Off Grid's testing strategy across platforms
+---
+
+Off Grid has comprehensive test coverage across React Native, Android, iOS, and end-to-end flows. All tests run automatically on every pull request via GitHub Actions.
+
+## Test Frameworks
+
+Tests run across three platforms with specialized frameworks:
+
+| Platform | Framework | Coverage |
+|----------|-----------|----------|
+| **React Native** | Jest + React Native Testing Library | Stores, services, components, screens, contracts |
+| **Android** | JUnit | LocalDream, DownloadManager, BroadcastReceiver |
+| **iOS** | XCTest | PDFExtractor, CoreMLDiffusion, DownloadManager |
+| **E2E** | Maestro | Critical path flows (launch, chat, models, downloads) |
+
+## Running Tests
+
+### All Tests
+
+Run the complete test suite (Jest + Android + iOS):
+
+```bash
+npm test
+```
+
+This command runs:
+1. Jest tests with coverage
+2. Android JUnit tests
+3. iOS XCTest suite
+
+### React Native Tests (Jest)
+
+<CodeGroup>
+```bash All Jest tests with coverage
+npx jest --coverage --forceExit
+```
+
+```bash Watch mode (interactive)
+npx jest --watch
+```
+
+```bash Specific test file
+npx jest src/services/__tests__/llm.test.ts
+```
+
+```bash Update snapshots
+npx jest -u
+```
+</CodeGroup>
+
+### Android Tests (JUnit)
+
+<CodeGroup>
+```bash npm script
+npm run test:android
+```
+
+```bash Direct Gradle command
+cd android
+./gradlew :app:testDebugUnitTest
+```
+
+```bash Re-run all tests
+cd android
+./gradlew :app:testDebugUnitTest --rerun-tasks
+```
+</CodeGroup>
+
+<Note>
+  Android tests require the Gradle wrapper in `android/`. Ensure you've run `cd android && ./gradlew clean` at least once.
+</Note>
+
+### iOS Tests (XCTest)
+
+<CodeGroup>
+```bash npm script
+npm run test:ios
+```
+
+```bash Direct xcodebuild command
+cd ios
+xcodebuild test \
+  -workspace OffgridMobile.xcworkspace \
+  -scheme OffgridMobile \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
+  -only-testing:OffgridMobileTests
+```
+</CodeGroup>
+
+<Warning>
+  iOS tests require Xcode 15+ and a configured iOS Simulator. The default simulator is iPhone 16 - adjust the `-destination` flag if using a different simulator.
+</Warning>
+
+### End-to-End Tests (Maestro)
+
+Maestro tests verify critical user flows end-to-end.
+
+<Steps>
+  <Step title="Install Maestro">
+    ```bash
+    curl -Ls "https://get.maestro.mobile.dev" | bash
+    ```
+  </Step>
+
+  <Step title="Start the app">
+    Launch the app on an emulator/simulator:
+
+    <Tabs>
+      <Tab title="Android">
+        ```bash
+        npm run android
+        ```
+      </Tab>
+      <Tab title="iOS">
+        ```bash
+        npm run ios
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Run E2E tests">
+    <CodeGroup>
+    ```bash All E2E flows
+    npm run test:e2e
+    # or
+    ./scripts/run-tests.sh
+    ```
+
+    ```bash Single flow
+    npm run test:e2e:single -- maestro/flows/chat.yaml
+    ```
+    </CodeGroup>
+  </Step>
+</Steps>
+
+<Note>
+  E2E tests require a **running app** on an emulator/simulator. They test:
+  - App launch and onboarding
+  - Chat message flow
+  - Model download and switching
+  - Image generation
+  - Settings changes
+</Note>
+
+## Test Coverage
+
+Off Grid uses [Codecov](https://codecov.io/gh/alichherawalla/off-grid-mobile) for test coverage tracking:
+
+[![codecov](https://codecov.io/gh/alichherawalla/off-grid-mobile/graph/badge.svg)](https://codecov.io/gh/alichherawalla/off-grid-mobile)
+
+### Viewing Coverage Reports
+
+After running Jest with `--coverage`, view the HTML report:
+
+```bash
+open coverage/lcov-report/index.html
+```
+
+### Coverage Requirements
+
+- **Jest coverage** is uploaded to Codecov on every PR
+- Codecov checks enforce coverage thresholds (no decrease in coverage allowed)
+- Uncovered lines are flagged in PR comments
+
+<Note>
+  Add tests for new code before submitting PRs. The CI pipeline will reject PRs that decrease test coverage.
+</Note>
+
+## Continuous Integration (GitHub Actions)
+
+All tests run automatically on every PR and push to `main` via GitHub Actions.
+
+### CI Workflow Jobs
+
+The CI workflow (`.github/workflows/ci.yml`) includes:
+
+<Tabs>
+  <Tab title="Lint">
+    **Job:** `lint`
+    
+    Runs on: `macos-latest`
+
+    Steps:
+    1. ESLint (JavaScript/TypeScript)
+    2. SwiftLint (iOS Swift code)
+    3. Android Lint (Kotlin code)
+
+    ```bash
+    npm run lint
+    ```
+
+    This runs:
+    - `eslint .`
+    - `swiftlint lint --quiet`
+    - `cd android && ./gradlew :app:lintDebug`
+  </Tab>
+
+  <Tab title="Type Check">
+    **Job:** `typecheck`
+
+    Runs on: `ubuntu-latest`
+
+    Verifies TypeScript types compile without errors:
+
+    ```bash
+    npx tsc --noEmit
+    ```
+  </Tab>
+
+  <Tab title="Test">
+    **Job:** `test`
+
+    Runs on: `macos-latest` (required for iOS tests)
+
+    Runs all test suites:
+    1. Jest tests with coverage
+    2. Android JUnit tests
+    3. iOS XCTest suite
+    4. Uploads coverage to Codecov
+    5. Uploads test result artifacts
+
+    ```bash
+    npx jest --coverage --forceExit
+    cd android && ./gradlew :app:testDebugUnitTest --rerun-tasks
+    cd ios && xcodebuild test -workspace OffgridMobile.xcworkspace ...
+    ```
+  </Tab>
+
+  <Tab title="Android Build">
+    **Job:** `android-build`
+
+    Runs on: `ubuntu-latest`
+
+    Builds Android debug and release APKs:
+
+    ```bash
+    cd android
+    ./gradlew assembleDebug
+    ./gradlew assembleRelease
+    ```
+  </Tab>
+</Tabs>
+
+### CI Badge
+
+[![CI](https://github.com/alichherawalla/off-grid-mobile/actions/workflows/ci.yml/badge.svg)](https://github.com/alichherawalla/off-grid-mobile/actions/workflows/ci.yml)
+
+The CI badge shows the current status of the `main` branch.
+
+## Pre-Commit Quality Gates (Husky)
+
+Off Grid uses Husky to run quality gates automatically on every `git commit`. Tests are scoped to the file types you staged.
+
+### Pre-Commit Hook Behavior
+
+| Staged file type | Checks that run automatically |
+|------------------|-------------------------------|
+| `.ts` / `.tsx` / `.js` / `.jsx` | ESLint (staged only), `tsc --noEmit`, `npm test` |
+| `.swift` | SwiftLint (staged only), `npm run test:ios` |
+| `.kt` / `.kts` | `compileDebugKotlin` (type check), `lintDebug`, `npm run test:android` |
+
+### Requirements
+
+- **SwiftLint:** `brew install swiftlint` (skipped with a warning if not installed)
+- **Android:** Gradle wrapper in `android/`
+
+<Warning>
+  If the hook fails, fix the issue and recommit. **Never skip with `--no-verify`** - this bypasses critical quality checks.
+</Warning>
+
+### Pre-Commit Hook Source
+
+The hook is defined in `.husky/pre-commit`:
+
+```bash .husky/pre-commit
+#!/usr/bin/env sh
+
+# Detect staged file types
+STAGED_JS=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(ts|tsx|js|jsx)$' || true)
+STAGED_SWIFT=$(git diff --cached --name-only --diff-filter=ACMR | grep '\.swift$' | grep -v 'Pods/' | grep -v 'build/' || true)
+STAGED_KOTLIN=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(kt|kts)$' || true)
+
+# ── JS / TS ──
+if [ -n "$STAGED_JS" ]; then
+  echo "▶ JS/TS lint (staged files)..."
+  npx lint-staged
+
+  echo "▶ TypeScript type check..."
+  npx tsc --noEmit
+
+  echo "▶ JS/TS tests..."
+  npm test
+fi
+
+# ── Swift / iOS ──
+if [ -n "$STAGED_SWIFT" ]; then
+  if command -v swiftlint >/dev/null 2>&1; then
+    echo "▶ SwiftLint (staged files)..."
+    echo "$STAGED_SWIFT" | tr '\n' '\0' | xargs -0 swiftlint lint --quiet
+  else
+    echo "⚠️  SwiftLint not installed — skipping Swift lint. Install: brew install swiftlint"
+  fi
+
+  echo "▶ iOS tests..."
+  npm run test:ios
+fi
+
+# ── Kotlin / Android ──
+if [ -n "$STAGED_KOTLIN" ]; then
+  echo "▶ Kotlin type check (compileDebugKotlin)..."
+  (cd android && ./gradlew compileDebugKotlin --quiet)
+
+  echo "▶ Android lint..."
+  (cd android && ./gradlew lintDebug --quiet)
+
+  echo "▶ Android tests..."
+  npm run test:android
+fi
+```
+
+## Writing Tests
+
+### Jest Tests (React Native)
+
+Example test for a Zustand store:
+
+```typescript src/stores/__tests__/chatStore.test.ts
+import { renderHook, act } from '@testing-library/react-native';
+import { useChatStore } from '../chatStore';
+
+describe('chatStore', () => {
+  beforeEach(() => {
+    // Reset store before each test
+    const { result } = renderHook(() => useChatStore());
+    act(() => {
+      result.current.clearAllConversations();
+    });
+  });
+
+  it('creates a new conversation', () => {
+    const { result } = renderHook(() => useChatStore());
+
+    act(() => {
+      result.current.createConversation('Test Chat');
+    });
+
+    expect(result.current.conversations).toHaveLength(1);
+    expect(result.current.conversations[0].title).toBe('Test Chat');
+  });
+});
+```
+
+### Android Tests (JUnit)
+
+Example test for a Kotlin module:
+
+```kotlin android/app/src/test/java/ai/offgridmobile/PdfExtractorTest.kt
+package ai.offgridmobile
+
+import org.junit.Test
+import org.junit.Assert.*
+
+class PdfExtractorTest {
+    @Test
+    fun testPdfExtraction() {
+        // Test PDF extraction logic
+        val extractor = PdfExtractorModule()
+        val result = extractor.extractText("test.pdf")
+        assertNotNull(result)
+    }
+}
+```
+
+### iOS Tests (XCTest)
+
+Example test for a Swift module:
+
+```swift ios/OffgridMobileTests/PDFExtractorTests.swift
+import XCTest
+@testable import OffgridMobile
+
+class PDFExtractorTests: XCTestCase {
+    func testPDFExtraction() {
+        let extractor = PDFExtractorModule()
+        let result = extractor.extractText("test.pdf")
+        XCTAssertNotNil(result)
+    }
+}
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Jest tests hang">
+    Use `--forceExit` to force Jest to exit after tests complete:
+
+    ```bash
+    npx jest --forceExit
+    ```
+
+    This is already included in the `npm test` script.
+  </Accordion>
+
+  <Accordion title="Android tests fail to find Gradle">
+    Ensure you've initialized the Android project:
+
+    ```bash
+    cd android
+    ./gradlew clean
+    cd ..
+    ```
+  </Accordion>
+
+  <Accordion title="iOS tests fail: Simulator not found">
+    Check available simulators:
+
+    ```bash
+    xcrun simctl list devices
+    ```
+
+    Update the `-destination` flag in the test command to match an available simulator.
+  </Accordion>
+
+  <Accordion title="SwiftLint not found">
+    Install SwiftLint via Homebrew:
+
+    ```bash
+    brew install swiftlint
+    ```
+  </Accordion>
+
+  <Accordion title="Coverage decreases on PR">
+    Codecov will block the PR if coverage decreases. Add tests for new code:
+
+    1. Check the Codecov report in the PR comment
+    2. Identify uncovered lines
+    3. Write tests to cover those lines
+    4. Push updated code
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Contributing Guide" icon="code-pull-request" href="/development/contributing-guide">
+    Learn the full contribution workflow including PR reviews
+  </Card>
+  <Card title="Project Structure" icon="folder-tree" href="/development/project-structure">
+    Understand the codebase organization
+  </Card>
+</CardGroup>

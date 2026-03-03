@@ -1,0 +1,290 @@
+---
+title: Document Attachments
+description: Attach documents, PDFs, and code files to conversations for context-aware AI responses
+icon: paperclip
+---
+
+## Overview
+
+Give your AI assistant context by attaching documents to your messages. Off Grid supports text files, code, PDFs, data files, and more. The AI reads the document and includes it in the conversation context when generating responses.
+
+## Supported Formats
+
+Off Grid can read and extract text from:
+
+### Text Files
+- `.txt` — Plain text
+- `.md` — Markdown
+- `.log` — Log files
+
+### Code Files
+- **JavaScript/TypeScript:** `.js`, `.jsx`, `.ts`, `.tsx`
+- **Python:** `.py`
+- **Java/Kotlin:** `.java`, `.kt`
+- **C/C++:** `.c`, `.cpp`, `.h`
+- **Swift:** `.swift`
+- **Go:** `.go`
+- **Rust:** `.rs`
+- **Ruby:** `.rb`
+- **PHP:** `.php`
+- **SQL:** `.sql`
+- **Shell:** `.sh`
+
+### Data Files
+- `.csv` — Comma-separated values
+- `.json` — JSON data
+- `.xml` — XML documents
+- `.yaml` / `.yml` — YAML configuration
+- `.toml` — TOML configuration
+- `.ini` / `.cfg` / `.conf` — Config files
+- `.html` — HTML documents
+
+### PDF Documents
+- `.pdf` — Native text extraction (see below)
+
+<Note>
+All formats are read as **text**. Binary files (images, videos, executables) are not supported as attachments. For images, use the **camera/photo library** feature with vision models instead.
+</Note>
+
+## How to Use
+
+### Attaching a Document
+
+1. Open a conversation
+2. Tap the **paperclip icon** in the chat input
+3. Select a file from your device using the native file picker
+4. The document appears as a badge in the input area
+5. Type your question about the document
+6. Send
+
+The AI reads the document's contents and includes it in the context when generating a response.
+
+### Multiple Attachments
+
+You can attach **multiple documents** to a single message:
+
+- Tap the paperclip again to add more files
+- Each document appears as a separate badge
+- All documents are included in the AI's context
+
+### Viewing Attachments
+
+Tap any document badge (in your input or in a sent message) to open it:
+
+- **iOS:** Opens in QuickLook (native preview)
+- **Android:** Opens with `Intent.ACTION_VIEW` (your device's default viewer)
+
+This lets you quickly review what you attached without leaving the app.
+
+### Removing Attachments
+
+Before sending:
+
+- Tap the **x** on any document badge to remove it
+- Removed documents are not included in the message
+
+## PDF Text Extraction
+
+Off Grid uses **native modules** to extract text from PDF documents:
+
+### iOS: PDFKit
+
+- Uses Apple's `PDFKit` framework (built-in)
+- Extracts text page-by-page with page separators
+- Handles most standard PDFs
+
+### Android: PdfRenderer
+
+- Uses Android's native `PdfRenderer` API (Kotlin)
+- Extracts text page-by-page with page separators
+- Handles most standard PDFs
+
+### Limitations
+
+- **Image-based PDFs:** Text extraction only works on PDFs with selectable text. Scanned documents (images) won't extract text.
+- **Password-protected PDFs:** Not supported (will fail gracefully)
+- **Corrupted PDFs:** May fail to extract text
+
+<Note>
+If a PDF doesn't extract text properly, try converting it to a text file first (copy/paste the text into a `.txt` file and attach that instead).
+</Note>
+
+## File Size Limits
+
+To prevent context window overload and memory issues:
+
+- **Max file size:** 5MB per file
+- **Max text content:** 50,000 characters per file
+- Files larger than 5MB are rejected
+- Text content longer than 50K characters is **truncated** with a note
+
+<Warning>
+Very large documents consume most of the model's context window, leaving less room for conversation history. For best results, keep attachments under 10,000 characters (~2,500 words).
+</Warning>
+
+## Persistent Storage
+
+Attached documents are copied to **persistent app storage** to ensure they survive temp file cleanup:
+
+### Storage Location
+
+```
+{DocumentDirectory}/attachments/
+  ├── 1701234567_document.pdf
+  ├── 1701234890_code.py
+  └── ...
+```
+
+Each file is prefixed with a timestamp ID for uniqueness.
+
+### Why Persistent?
+
+On Android, the document picker returns `content://` URIs that point to temporary files. These can be deleted by the system at any time. Off Grid copies them to a persistent location so you can:
+
+- View attachments later (even if the original file is deleted)
+- Export conversations with attachments intact
+- Re-open documents from old messages
+
+### Cleanup
+
+Attachments are **not automatically deleted**. If you want to free up space:
+
+1. Delete conversations containing large attachments
+2. Or manually delete files from `{DocumentDirectory}/attachments/` (requires file manager access)
+
+## Use Cases
+
+### Code Review
+
+**Scenario:** You want feedback on a Python script.
+
+1. Attach `script.py`
+2. Ask: "Review this code and suggest improvements"
+3. The AI reads the code and provides feedback
+
+---
+
+### Data Analysis
+
+**Scenario:** You have a CSV file with sales data.
+
+1. Attach `sales_2024.csv`
+2. Ask: "What are the top 3 products by revenue?"
+3. The AI parses the CSV and answers your question
+
+---
+
+### Document Q&A
+
+**Scenario:** You have a PDF contract and need to find specific clauses.
+
+1. Attach `contract.pdf`
+2. Ask: "What is the termination policy?"
+3. The AI extracts text from the PDF and finds the relevant section
+
+---
+
+### Configuration Help
+
+**Scenario:** You're debugging a YAML config file.
+
+1. Attach `config.yaml`
+2. Ask: "Why isn't my database connection working?"
+3. The AI reads the config and spots the issue
+
+---
+
+### Log Analysis
+
+**Scenario:** Your app crashed and you have a log file.
+
+1. Attach `crash.log`
+2. Ask: "What caused this crash?"
+3. The AI analyzes the stack trace and suggests fixes
+
+## Tips
+
+### Getting the Best Results
+
+1. **Attach only relevant files** — Don't attach entire codebases, just the file(s) related to your question
+2. **Ask specific questions** — "Find the bug in line 47" vs. "Review this code"
+3. **Use small files** — Under 10K characters works best
+4. **Combine with text** — Explain what you're looking for in your message
+5. **Try PDFs carefully** — Ensure the PDF has selectable text, not just images
+
+### Optimizing Context Usage
+
+Attachments consume context window space. To maximize available context:
+
+- **Increase context length** (Settings → Model Settings → Context Length)
+- **Attach fewer files** per message
+- **Truncate large files** manually before attaching (copy relevant sections to a new file)
+- **Clear conversation history** periodically (start a new chat)
+
+### Troubleshooting
+
+**File picker won't open:**
+- Check storage permissions (Android: Settings → Apps → Off Grid → Permissions → Storage)
+- Ensure you have a file manager app installed
+
+**PDF text extraction fails:**
+- Ensure the PDF has selectable text (not a scanned image)
+- Try opening the PDF in another app to verify it's not corrupted
+- Convert the PDF to text manually (copy/paste into a `.txt` file)
+
+**Attachment too large:**
+- Files over 5MB are rejected
+- Try compressing the file or extracting only the relevant section
+
+**AI doesn't reference the document:**
+- Ensure you asked a specific question about the document
+- Check that the document was attached (badge should appear in the input area)
+- Try rephrasing: "According to the attached file, what is..."
+
+**Document badge shows but won't open:**
+- The original file may have been moved or deleted
+- Check if the file still exists in device storage
+- Re-attach the document if needed
+
+## Technical Details
+
+### Content URI Resolution (Android)
+
+Android's document picker returns `content://` URIs that RNFS can't read directly. Off Grid resolves these by:
+
+1. Copying the file to a temp cache path
+2. Reading the temp file
+3. Copying to persistent storage
+4. Cleaning up the temp file
+
+This ensures attachments work even after the original URI becomes invalid.
+
+### Text Truncation
+
+When content exceeds 50,000 characters:
+
+```typescript
+if (raw.length > maxChars) {
+  return `${raw.substring(0, maxChars)}\n\n... [Content truncated due to length]`;
+}
+```
+
+The AI sees the first 50K characters plus a note that content was truncated.
+
+### Document Viewer Integration
+
+Off Grid uses `@react-native-documents/viewer` for cross-platform document opening:
+
+- **iOS:** `QuickLook` framework (supports PDF, text, images, Office docs, etc.)
+- **Android:** `Intent.ACTION_VIEW` (opens with the system's default app for that file type)
+
+## Privacy
+
+All document processing happens **100% on-device**:
+
+- Your files **never leave your device**
+- No cloud uploads
+- No data collection
+- Works completely offline (after model download)
+
+You can enable airplane mode and attach documents indefinitely.

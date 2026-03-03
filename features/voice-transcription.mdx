@@ -1,0 +1,272 @@
+---
+title: Voice Transcription
+description: Convert speech to text using on-device Whisper models
+icon: mic
+---
+
+## Overview
+
+Off Grid includes on-device speech recognition powered by **Whisper** via whisper.rn native bindings. Speak your messages instead of typing them — all transcription happens locally on your device with no network required.
+
+## How It Works
+
+Whisper is OpenAI's speech recognition model, compiled for mobile via whisper.cpp:
+
+1. **Hold to record** — Press and hold the microphone button in the chat input
+2. **Speak your message** — Whisper transcribes in real-time (you'll see partial results)
+3. **Release to finish** — Transcription completes and inserts into the input field
+4. **Review and send** — Edit if needed, then send
+
+All audio processing happens on-device — your voice **never leaves your phone**.
+
+## Available Models
+
+Off Grid supports multiple Whisper model sizes, balancing speed vs. accuracy:
+
+<Tabs>
+  <Tab title="Tiny (75MB)">
+    ### Whisper Tiny
+    
+    - **Size:** 75MB
+    - **Speed:** Fastest, real-time transcription
+    - **Accuracy:** Good for clear speech
+    - **Best for:** Quick messages, casual conversations
+    
+    Available in:
+    - **English-only** (`tiny.en`) — Optimized for English
+    - **Multilingual** (`tiny`) — Supports multiple languages
+  </Tab>
+  
+  <Tab title="Base (142MB)">
+    ### Whisper Base
+    
+    - **Size:** 142MB
+    - **Speed:** Fast, near real-time
+    - **Accuracy:** Better than Tiny, handles accents and noise better
+    - **Best for:** General use, balanced performance
+    
+    Available in:
+    - **English-only** (`base.en`)
+    - **Multilingual** (`base`) — **Recommended default**
+  </Tab>
+  
+  <Tab title="Small (466MB)">
+    ### Whisper Small
+    
+    - **Size:** 466MB
+    - **Speed:** Slower, slight delay
+    - **Accuracy:** Highest accuracy, best noise handling
+    - **Best for:** Noisy environments, technical/medical terminology, high accuracy needs
+    
+    Available in:
+    - **English-only** (`small.en`)
+    - **Multilingual** (`small`)
+  </Tab>
+</Tabs>
+
+<Note>
+**Multilingual models** support 99+ languages including Spanish, French, German, Chinese, Japanese, Arabic, and more. If you only speak English, use the `.en` variants for slightly better performance.
+</Note>
+
+## How to Use
+
+### 1. Download a Whisper Model
+
+1. Go to **Settings** → **Voice Settings**
+2. Select a model (Base Multilingual recommended for first-time users)
+3. Tap **Download** and wait for it to complete
+4. The model is automatically set as active
+
+<Note>
+Whisper models download on **first use** if not already installed. You'll see a download progress indicator in the voice settings screen.
+</Note>
+
+### 2. Grant Microphone Permission
+
+The first time you use voice input:
+
+- **Android:** You'll see a permission dialog requesting microphone access
+- **iOS:** Audio session is configured automatically and triggers the permission prompt
+
+Grant permission to enable voice transcription.
+
+### 3. Record Your Message
+
+1. Open any conversation
+2. **Tap and hold** the microphone button in the chat input
+3. Speak your message clearly
+4. **Release** when done
+5. Review the transcription in the input field
+6. Edit if needed, then send
+
+### Slide to Cancel
+
+Changed your mind while recording?
+
+- **Slide your finger left** while holding the mic button
+- Release to cancel the recording
+- No transcription is performed
+
+## Language Support
+
+Whisper multilingual models support **99 languages**, including:
+
+- **European:** English, Spanish, French, German, Italian, Portuguese, Russian, Polish, Dutch, Swedish, Norwegian, Danish, Finnish, Greek, Turkish
+- **Asian:** Chinese (Mandarin & Cantonese), Japanese, Korean, Hindi, Thai, Vietnamese, Indonesian, Malay, Tagalog
+- **Middle Eastern:** Arabic, Hebrew, Persian, Urdu
+- **And many more...**
+
+### Setting Language
+
+By default, Whisper auto-detects the spoken language. You can manually specify a language in **Settings** → **Voice Settings** → **Language** if auto-detection isn't accurate.
+
+<Note>
+Language setting uses IANA language codes (e.g., `en` for English, `es` for Spanish, `zh` for Chinese). Check the Whisper documentation for the full list of supported languages.
+</Note>
+
+## Performance
+
+Whisper transcription is **real-time** on most devices:
+
+| Model | Device Class | Speed | Use Case |
+|-------|--------------|-------|----------|
+| **Tiny** | All devices | Real-time | Quick messages |
+| **Base** | Mid-range+ | Near real-time | General use |
+| **Small** | Flagship | Slight delay | High accuracy |
+
+**Real-time** means transcription keeps up with your speech — you see results as you talk.
+
+### Factors Affecting Speed
+
+- **Model size** — Larger models are slower but more accurate
+- **Device CPU** — Faster processors = faster transcription
+- **Audio length** — Longer recordings take more time to process
+- **Background noise** — More noise = more processing time
+
+## Technical Details
+
+### How Whisper Works
+
+1. **Audio capture** — whisper.rn records audio via native audio APIs
+2. **Preprocessing** — Audio is converted to the format Whisper expects (16kHz mono)
+3. **Inference** — whisper.cpp processes the audio and generates transcription
+4. **Streaming results** — Partial transcriptions are sent to React Native via callbacks
+5. **Final output** — Complete transcription is inserted into the chat input
+
+### Real-time Transcription API
+
+Off Grid uses whisper.rn's `transcribeRealtime` API:
+
+```typescript
+const { stop, subscribe } = await context.transcribeRealtime({
+  language: 'en',
+  maxLen: 0, // no limit
+  realtimeAudioSec: 30, // process in 30-second chunks
+  realtimeAudioSliceSec: 3, // slice every 3 seconds for faster intermediate results
+});
+```
+
+- **30-second chunks** — Audio is processed in 30-second segments
+- **3-second slices** — Intermediate results every 3 seconds for responsive UI
+- **Streaming events** — `subscribe()` receives events with `isCapturing`, `text`, `processTime`, etc.
+
+### Storage Location
+
+Whisper models are stored in:
+
+```
+{DocumentDirectory}/whisper-models/
+  ├── ggml-tiny.en.bin
+  ├── ggml-base.en.bin
+  ├── ggml-small.en.bin
+  └── ...
+```
+
+Models are downloaded from Hugging Face and persist across app updates.
+
+### Audio Session (iOS)
+
+On iOS, whisper.rn configures the audio session:
+
+- **Category:** `PlayAndRecord` (allows recording + playback)
+- **Options:** `AllowBluetooth`, `MixWithOthers` (Bluetooth headset support, mix with other audio)
+- **Mode:** `Default`
+- **Restore on stop** — Audio session is restored to previous state after recording
+
+### Permissions
+
+**Android:**
+- Requires `RECORD_AUDIO` permission
+- Requested on first use via `PermissionsAndroid.request()`
+
+**iOS:**
+- Microphone permission triggered when audio session is activated
+- Configured automatically by whisper.rn
+
+## Tips
+
+### Getting the Best Transcription Quality
+
+1. **Speak clearly** — Enunciate words, avoid mumbling
+2. **Minimize background noise** — Find a quiet environment
+3. **Use a good microphone** — Built-in mic works, but Bluetooth headsets are better
+4. **Short sentences** — Pause between thoughts for better accuracy
+5. **Use the right model** — Base for general use, Small for noisy environments
+
+### Choosing the Right Model
+
+- **Speed priority:** Tiny (English or Multilingual)
+- **Balanced:** Base Multilingual (recommended)
+- **Accuracy priority:** Small (English or Multilingual)
+- **English-only users:** Use `.en` variants for slightly better performance
+- **Multilingual users:** Use multilingual variants and let Whisper auto-detect language
+
+### Troubleshooting
+
+**Transcription is slow:**
+- Try a smaller model (Base instead of Small)
+- Ensure no other apps are using the microphone
+- Check CPU usage in Settings → Device Info
+
+**Microphone permission denied:**
+- Go to device Settings → Apps → Off Grid → Permissions → Microphone → Allow
+- Restart the app after granting permission
+
+**Transcription is inaccurate:**
+- Try a larger model (Small instead of Tiny)
+- Speak more clearly and reduce background noise
+- Manually set the language in Voice Settings if auto-detection is wrong
+
+**Recording stuck / won't stop:**
+- Release the mic button fully
+- If stuck, force-stop the app and restart
+- Check logs for errors
+
+**No transcription appears:**
+- Check if a Whisper model is downloaded (Settings → Voice Settings)
+- Ensure microphone permission is granted
+- Try recording again (sometimes first attempt fails)
+
+## Privacy
+
+All voice transcription happens **100% on-device**:
+
+- Your voice **never leaves your device**
+- No cloud API calls
+- No audio uploaded to servers
+- Works completely offline (after model download)
+
+You can enable airplane mode and use voice transcription indefinitely.
+
+## File Transcription
+
+Whisper can also transcribe pre-recorded audio files:
+
+```typescript
+const transcription = await whisperService.transcribeFile(
+  '/path/to/audio.wav',
+  { language: 'en' }
+);
+```
+
+This feature is available via the API but not yet exposed in the UI. Useful for developers building custom workflows.

@@ -1,0 +1,164 @@
+---
+title: Introduction
+description: Off Grid is a privacy-first offline AI suite for mobile that runs AI models entirely on-device — text generation, vision AI, image generation, and voice transcription.
+---
+
+# Off Grid
+
+**The Swiss Army Knife of On-Device AI**
+
+Chat. Generate images. Use tools. See. Listen. All on your phone or Mac. All offline. Zero data leaves your device.
+
+<Note>
+  Off Grid runs AI models entirely on-device — text generation (GGUF/llama.cpp), vision AI (multimodal models), image generation (Stable Diffusion), and voice transcription (Whisper). Zero data leaves the device after model download.
+</Note>
+
+## Not Just Another Chat App
+
+Most "local LLM" apps give you a text chatbot and call it a day. Off Grid is a **complete offline AI suite** — text generation, image generation, vision AI, voice transcription, tool calling, and document analysis, all running natively on your phone's or Mac's hardware.
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Get started with your first AI interaction in minutes
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    Install Off Grid on iOS, Android, or macOS
+  </Card>
+  <Card title="Privacy First" icon="shield">
+    Zero data leaves your device. No cloud. No subscription. No data harvesting.
+  </Card>
+  <Card title="100% Offline" icon="wifi-slash">
+    Enable airplane mode after downloading models. Everything runs locally.
+  </Card>
+</CardGroup>
+
+## What Can It Do?
+
+### Text Generation
+
+Run Qwen 3, Llama 3.2, Gemma 3, Phi-4, and any GGUF model. Streaming responses, thinking mode, markdown rendering, **15-30 tok/s on flagship devices**. Bring your own `.gguf` files too.
+
+- Multi-model support with hot-swapping
+- Streaming inference with real-time token callbacks
+- Context window management with automatic truncation
+- Custom system prompts via project-based conversations
+- Configurable KV cache type (f16, q8_0, q4_0) for memory/quality tradeoffs
+- Flash attention for faster inference
+
+### Tool Calling
+
+Models that support function calling can use built-in tools:
+
+- **Web Search** — Scrapes Brave Search for top 5 results (requires network)
+- **Calculator** — Safe recursive descent parser supporting `+, -, *, /, %, ^, ()`
+- **Date/Time** — Returns formatted date/time with optional timezone support
+- **Device Info** — Battery level, storage usage, and memory stats
+
+Automatic tool loop with runaway prevention. Clickable links in search results.
+
+### Image Generation
+
+On-device Stable Diffusion with real-time preview:
+
+- **Android**: NPU-accelerated on Snapdragon (5-10s per image), MNN backend for all devices
+- **iOS**: Core ML (ANE + CPU), optimized for Apple Silicon
+- 20+ models including Absolute Reality, DreamShaper, Anything V5
+- AI prompt enhancement using your loaded text model
+- Seed control for reproducibility
+
+### Vision AI
+
+Point your camera at anything and ask questions:
+
+- SmolVLM, Qwen3-VL, Gemma 3n — analyze documents, describe scenes, read receipts
+- **~7s inference on flagship devices**
+- Automatic mmproj (multimodal projector) handling
+- Camera and photo library integration
+
+### Voice Input
+
+On-device Whisper speech-to-text:
+
+- Hold to record, auto-transcribe
+- Multiple model sizes (Tiny, Base, Small)
+- No audio ever leaves your phone
+- Real-time partial transcription
+
+### Document Analysis
+
+Attach PDFs, code files, CSVs, and more to your conversations:
+
+- Native PDF text extraction on both platforms
+- 50+ supported file formats
+- Tappable document badges to open with system viewer
+- 5MB maximum file size, 50K character context limit
+
+## Performance
+
+Tested on Snapdragon 8 Gen 2/3, Apple A17 Pro. Results vary by model size and quantization.
+
+| Task | Flagship | Mid-range |
+|------|----------|----------|
+| Text generation | 15-30 tok/s | 5-15 tok/s |
+| Image gen (NPU) | 5-10s | — |
+| Image gen (CPU) | ~15s | ~30s |
+| Vision inference | ~7s | ~15s |
+| Voice transcription | Real-time | Real-time |
+
+<Warning>
+  Performance depends heavily on:
+  - Model size (smaller = faster)
+  - Quantization level (Q4_K_M recommended)
+  - Device RAM (8GB+ recommended for larger models)
+  - GPU/NPU acceleration availability
+</Warning>
+
+## Platform Support
+
+| Feature | Android | iOS |
+|---------|---------|-----|
+| Text Generation (GGUF) | llama.cpp (CPU + OpenCL GPU) | llama.cpp (CPU + Metal) |
+| Vision AI | llama.rn multimodal | llama.rn multimodal |
+| Image Generation | local-dream (MNN/QNN) | Core ML (ANE + CPU) |
+| Voice Transcription | whisper.cpp | whisper.cpp |
+| PDF Extraction | PdfRenderer (Kotlin) | PDFKit (Swift) |
+| Background Downloads | Native DownloadManager | RNFS / URLSession |
+
+## Privacy & Security
+
+**Zero Network Activity After Model Download:**
+
+- All inference happens on-device
+- Enable airplane mode and use indefinitely
+- No cloud. No subscription. No data harvesting.
+
+**Data Storage:**
+
+- All conversations stored in app's private storage (OS-level encryption)
+- Models stored in internal app files directory
+- Optional passphrase lock for sensitive conversations
+
+**Network Activity (Model Download Only):**
+
+- Hugging Face API for model metadata
+- Hugging Face CDN for model file downloads
+- After download: **zero network activity**
+
+## Get Started
+
+<CardGroup cols={2}>
+  <Card title="Installation Guide" icon="download" href="/installation">
+    Install Off Grid on your device
+  </Card>
+  <Card title="Quick Start Tutorial" icon="play" href="/quickstart">
+    Your first AI interaction in 5 minutes
+  </Card>
+</CardGroup>
+
+---
+
+**Off Grid** — Your AI, your device, your data.
+
+*No cloud. No subscription. No data harvesting. Just AI that works anywhere.*

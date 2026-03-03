@@ -1,0 +1,538 @@
+---
+title: Design System
+description: Complete reference for Off Grid's brutalist design system
+icon: palette
+---
+
+## Brutalist Design Philosophy
+
+Off Grid uses a **terminal-inspired brutalist design system** with full light/dark theme support. The system emphasizes:
+
+- **Information density** over decoration
+- **Functional minimalism** with zero ornamental UI
+- **Monochromatic palette** with emerald accent
+- **Monospace typography** (Menlo) throughout
+- **Crisp borders** and geometric layouts
+
+The design philosophy prioritizes clarity and function — no gradients, no rounded corners on interactive elements, and no visual hierarchy tricks that don't serve the user's immediate goal.
+
+---
+
+## Theme System
+
+Dynamic light/dark theming via `src/theme/`:
+
+### Core Files
+
+- **`palettes.ts`** — `COLORS_LIGHT`, `COLORS_DARK`, `SHADOWS_LIGHT`, `SHADOWS_DARK`, `createElevation()`
+- **`index.ts`** — `useTheme()` hook, `getTheme(mode)`, `Theme` type
+- **`useThemedStyles.ts`** — `useThemedStyles(createStyles)` memoized style factory
+
+### Usage Pattern
+
+Every screen and component follows this pattern:
+
+```typescript
+import { useTheme, useThemedStyles } from '../theme';
+import type { ThemeColors, ThemeShadows } from '../theme/palettes';
+
+function MyComponent() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>Hello</Text>
+    </View>
+  );
+}
+
+const createStyles = (colors: ThemeColors, shadows: ThemeShadows) => ({
+  container: { 
+    backgroundColor: colors.background,
+  },
+  card: { 
+    ...shadows.medium, 
+    backgroundColor: colors.surface,
+  },
+  title: {
+    color: colors.text,
+  },
+});
+```
+
+### Theme Toggle
+
+Theme mode is stored in `appStore.themeMode` (persisted) and toggled via the Settings screen Dark Mode switch.
+
+```typescript
+export type ThemeMode = 'system' | 'light' | 'dark';
+```
+
+### Token Organization
+
+- **Theme-independent tokens** stay in `src/constants/`: `TYPOGRAPHY`, `SPACING`, `FONTS`
+- **Dynamic tokens** come from hooks: `colors.*`, `shadows.*`
+
+---
+
+## Color Palettes
+
+### Light Palette
+
+```typescript
+export const COLORS_LIGHT = {
+  // Primary accent
+  primary: '#059669',        // Emerald-600
+  primaryDark: '#047857',    // Emerald-700
+  primaryLight: '#34D399',   // Emerald-400
+
+  // Backgrounds
+  background: '#FFFFFF',
+  surface: '#F5F5F5',
+  surfaceLight: '#EBEBEB',
+  surfaceHover: '#E0E0E0',
+
+  // Text hierarchy
+  text: '#0A0A0A',
+  textSecondary: '#525252',
+  textMuted: '#8A8A8A',
+  textDisabled: '#BFBFBF',
+
+  // Borders
+  border: '#E5E5E5',
+  borderLight: '#D4D4D4',
+  borderFocus: '#059669',
+
+  // Semantic colors
+  success: '#525252',
+  warning: '#0A0A0A',
+  error: '#DC2626',
+  errorBackground: 'rgba(220, 38, 38, 0.10)',
+  info: '#525252',
+
+  // Special
+  overlay: 'rgba(0, 0, 0, 0.4)',
+  divider: '#EBEBEB',
+};
+```
+
+### Dark Palette
+
+```typescript
+export const COLORS_DARK = {
+  // Primary accent
+  primary: '#34D399',        // Emerald-400
+  primaryDark: '#10B981',    // Emerald-500
+  primaryLight: '#6EE7B7',   // Emerald-300
+
+  // Backgrounds
+  background: '#0A0A0A',
+  surface: '#141414',
+  surfaceLight: '#1E1E1E',
+  surfaceHover: '#252525',
+
+  // Text hierarchy
+  text: '#FFFFFF',
+  textSecondary: '#B0B0B0',
+  textMuted: '#808080',
+  textDisabled: '#4A4A4A',
+
+  // Borders
+  border: '#1E1E1E',
+  borderLight: '#2A2A2A',
+  borderFocus: '#34D399',
+
+  // Semantic colors
+  success: '#B0B0B0',
+  warning: '#FFFFFF',
+  error: '#C75050',
+  errorBackground: 'rgba(239, 68, 68, 0.15)',
+  info: '#B0B0B0',
+
+  // Special
+  overlay: 'rgba(0, 0, 0, 0.7)',
+  divider: '#1A1A1A',
+};
+```
+
+---
+
+## Shadows & Elevation
+
+### Light Shadows
+
+Uses CSS boxShadow (RN 0.76+ with New Architecture) for cross-platform shadow rendering:
+
+```typescript
+export const SHADOWS_LIGHT: ThemeShadows = {
+  small: {
+    boxShadow: '0px 1px 8px 0px rgba(0,0,0,0.18)',
+  },
+  medium: {
+    boxShadow: '0px 2px 10px 0px rgba(0,0,0,0.22)',
+  },
+  large: {
+    boxShadow: '0px 4px 18px 0px rgba(0,0,0,0.35)',
+  },
+  glow: {
+    boxShadow: '0px 0px 12px 0px rgba(5,150,105,0.25)',
+  },
+};
+```
+
+### Dark Shadows
+
+Crisp white glow for depth in dark mode:
+
+```typescript
+export const SHADOWS_DARK: ThemeShadows = {
+  small: {
+    boxShadow: '0px 0px 6px 0px rgba(255,255,255,0.18)',
+  },
+  medium: {
+    boxShadow: '0px 0px 6px 0px rgba(255,255,255,0.20)',
+  },
+  large: {
+    boxShadow: '0px 0px 10px 0px rgba(255,255,255,0.25)',
+  },
+  glow: {
+    boxShadow: '0px 0px 8px 0px rgba(52,211,153,0.30)',
+  },
+};
+```
+
+### Elevation Factory
+
+The `createElevation()` function generates 5 elevation levels with appropriate backgrounds, borders, and blur effects:
+
+```typescript
+export function createElevation(colors: ThemeColors) {
+  return {
+    level0: {
+      backgroundColor: colors.background,
+      borderWidth: 0,
+      borderColor: 'transparent',
+    },
+    level1: {
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    level2: {
+      backgroundColor: colors.surfaceLight,
+      borderWidth: 1,
+      borderColor: colors.borderLight,
+    },
+    level3: {
+      backgroundColor: `${colors.surface}F2`,
+      borderTopWidth: 1,
+      borderColor: colors.borderLight,
+      borderRadius: 16,
+      blur: {
+        ios: { blurAmount: 10, blurType: isDark ? 'dark' : 'light' },
+        android: { overlayColor: colors.overlay },
+      },
+    },
+    level4: {
+      backgroundColor: `${colors.surface}FA`,
+      borderTopWidth: 1,
+      borderColor: colors.primary,
+      borderRadius: 16,
+      blur: {
+        ios: { blurAmount: 15, blurType: isDark ? 'dark' : 'light' },
+        android: { overlayColor: colors.overlay },
+      },
+    },
+  };
+}
+```
+
+---
+
+## Typography Scale
+
+**10-level scale, all Menlo monospace:**
+
+```typescript
+export const FONTS = {
+  mono: 'Menlo',
+};
+
+export const TYPOGRAPHY = {
+  // Display / Hero numbers
+  display: {
+    fontSize: 22,
+    fontFamily: 'Menlo',
+    fontWeight: '200',
+    letterSpacing: -0.5,
+  },
+
+  // Headings
+  h1: {
+    fontSize: 24,
+    fontFamily: 'Menlo',
+    fontWeight: '300',
+    letterSpacing: -0.5,
+  },
+  h2: {
+    fontSize: 16,
+    fontFamily: 'Menlo',
+    fontWeight: '400',
+    letterSpacing: -0.2,
+  },
+  h3: {
+    fontSize: 13,
+    fontFamily: 'Menlo',
+    fontWeight: '400',
+    letterSpacing: -0.2,
+  },
+
+  // Body text
+  body: {
+    fontSize: 14,
+    fontFamily: 'Menlo',
+    fontWeight: '400',
+  },
+  bodySmall: {
+    fontSize: 13,
+    fontFamily: 'Menlo',
+    fontWeight: '400',
+  },
+
+  // Labels (whispers)
+  label: {
+    fontSize: 10,
+    fontFamily: 'Menlo',
+    fontWeight: '400',
+    letterSpacing: 0.3,
+  },
+  labelSmall: {
+    fontSize: 9,
+    fontFamily: 'Menlo',
+    fontWeight: '400',
+    letterSpacing: 0.3,
+  },
+
+  // Metadata / Details
+  meta: {
+    fontSize: 10,
+    fontFamily: 'Menlo',
+    fontWeight: '300',
+  },
+  metaSmall: {
+    fontSize: 9,
+    fontFamily: 'Menlo',
+    fontWeight: '300',
+  },
+};
+```
+
+### Usage Guidelines
+
+- **h1** — Hero text only (24px, light weight)
+- **h2** — Screen titles (16px)
+- **h3** — Section headers (13px)
+- **body** — Primary content (14px)
+- **bodySmall** — Descriptions (13px)
+- **label** — Uppercase labels (10px)
+- **meta** — Timestamps, metadata (10px, lighter weight)
+
+---
+
+## Spacing Scale
+
+**6-step scale for consistent whitespace:**
+
+```typescript
+export const SPACING = {
+  xs: 4,    // Tight spacing between related elements
+  sm: 8,    // Standard inline spacing
+  md: 12,   // Section padding
+  lg: 16,   // Card padding, container spacing
+  xl: 24,   // Screen padding, large gaps
+  xxl: 32,  // Major section separation
+};
+```
+
+---
+
+## Animation System
+
+Powered by **react-native-reanimated** with spring-based physics and **react-native-haptic-feedback**.
+
+### AnimatedEntry
+
+Staggered fade + slide entrance for lists and grids. Respects `useReducedMotion()`.
+
+**Source:** `src/components/AnimatedEntry.tsx`
+
+```typescript
+import { AnimatedEntry } from '../components/AnimatedEntry';
+
+// In a list
+{items.map((item, index) => (
+  <AnimatedEntry key={item.id} index={index} staggerMs={30}>
+    <ItemCard item={item} />
+  </AnimatedEntry>
+))}
+```
+
+**Props:**
+
+- `index` — Item index in list (for stagger calculation)
+- `delay` — Manual delay override (ms)
+- `staggerMs` — Delay per item (default: 30ms)
+- `maxItems` — Max items to animate (default: 10)
+- `from` — Initial style (default: `{ opacity: 0, translateY: 12 }`)
+- `animate` — Target style (default: `{ opacity: 1, translateY: 0 }`)
+- `transition` — Timing config (default: `{ duration: 300 }`)
+- `trigger` — Change this value to replay animation
+
+<Note>
+  Automatically skips animation if `index >= maxItems` to prevent performance issues in long lists.
+</Note>
+
+### AnimatedPressable
+
+Spring scale-down on press with haptic feedback.
+
+**Source:** `src/components/AnimatedPressable.tsx`
+
+```typescript
+import { AnimatedPressable } from '../components/AnimatedPressable';
+
+<AnimatedPressable
+  scaleValue={0.97}
+  hapticType="selection"
+  onPress={handlePress}
+>
+  <Text>Tap me</Text>
+</AnimatedPressable>
+```
+
+**Props:**
+
+- `scaleValue` — Scale on press (default: 0.97)
+- `hapticType` — `'selection'` | `'impactLight'` | `'impactMedium'` | `'impactHeavy'` | `'notificationSuccess'` | `'notificationWarning'` | `'notificationError'`
+- `disabled` — Disable interaction
+- Standard TouchableOpacity props
+
+### AppSheet
+
+Custom swipe-to-dismiss bottom sheet with spring animation, replacing React Native modals.
+
+**Source:** `src/components/AppSheet.tsx`
+
+### useFocusTrigger
+
+Hook that replays stagger animations on every tab focus.
+
+```typescript
+import { useFocusTrigger } from '../hooks/useFocusTrigger';
+
+const focusTrigger = useFocusTrigger();
+
+<AnimatedEntry trigger={focusTrigger} index={0}>
+  {/* Content re-animates on tab focus */}
+</AnimatedEntry>
+```
+
+### Global Animation Behavior
+
+- **Tab transitions** — Fade animations + haptic feedback on bottom tab switches
+- **Modal screens** — `slide_from_bottom` animation for all modal presentations
+- **Reduced motion** — All animations automatically disabled when user has system-level reduced motion enabled
+
+---
+
+## Design Tokens Reference
+
+### Quick Import
+
+```typescript
+// Constants (theme-independent)
+import { TYPOGRAPHY, SPACING, FONTS } from '../constants';
+
+// Theme (dynamic light/dark)
+import { useTheme, useThemedStyles } from '../theme';
+import type { ThemeColors, ThemeShadows } from '../theme/palettes';
+```
+
+### File Locations
+
+| Token | File |
+|-------|------|
+| Colors | `src/theme/palettes.ts` |
+| Shadows | `src/theme/palettes.ts` |
+| Elevation | `src/theme/palettes.ts` |
+| Typography | `src/constants/index.ts` |
+| Spacing | `src/constants/index.ts` |
+| Fonts | `src/constants/index.ts` |
+
+---
+
+## Example Component
+
+Complete example showing all design tokens in use:
+
+```typescript
+import React from 'react';
+import { View, Text } from 'react-native';
+import { useTheme, useThemedStyles } from '../theme';
+import { TYPOGRAPHY, SPACING } from '../constants';
+import { AnimatedPressable } from '../components/AnimatedPressable';
+import type { ThemeColors, ThemeShadows } from '../theme/palettes';
+
+function ExampleCard() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>Card Title</Text>
+      <Text style={styles.description}>Description text</Text>
+      <AnimatedPressable 
+        hapticType="selection"
+        onPress={() => {}}
+      >
+        <View style={styles.button}>
+          <Text style={styles.buttonText}>Action</Text>
+        </View>
+      </AnimatedPressable>
+    </View>
+  );
+}
+
+const createStyles = (colors: ThemeColors, shadows: ThemeShadows) => ({
+  container: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: SPACING.lg,
+    gap: SPACING.md,
+    ...shadows.medium,
+  },
+  title: {
+    ...TYPOGRAPHY.h2,
+    color: colors.text,
+  },
+  description: {
+    ...TYPOGRAPHY.bodySmall,
+    color: colors.textSecondary,
+  },
+  button: {
+    backgroundColor: colors.primary,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.lg,
+    borderWidth: 1,
+    borderColor: colors.primaryDark,
+  },
+  buttonText: {
+    ...TYPOGRAPHY.body,
+    color: '#FFFFFF',
+  },
+});
+
+export default ExampleCard;
+```

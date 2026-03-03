@@ -1,0 +1,456 @@
+---
+title: Tool Calling
+description: Enable AI models to use tools like web search, calculator, and device info
+icon: wrench
+---
+
+## Overview
+
+Tool calling lets AI models perform actions beyond text generation. Instead of saying "I don't know the current weather," the model can **call a web search tool** to find the answer. Off Grid includes built-in tools for web search, calculations, date/time, and device information — all running on-device except web search (which requires network).
+
+## Available Tools
+
+<Accordion title="Web Search">
+### Web Search
+
+Search the web for current information via Brave Search.
+
+**Use cases:**
+- "What's the weather in New York?"
+- "Latest news about AI"
+- "Who won the Super Bowl in 2024?"
+
+**How it works:**
+- Scrapes Brave Search for top 5 results
+- Returns titles, snippets, and clickable URLs
+- URLs open in your system browser when tapped
+
+**Requirements:**
+- Network connection (only tool that requires internet)
+- Empty queries fall back to your last message
+
+**Response format:**
+```
+1. [Title](https://example.com)
+   Snippet text...
+
+2. [Title](https://example.com)
+   Snippet text...
+```
+
+<Warning>
+Web search sends requests to Brave Search. If you want 100% offline operation, disable this tool in settings.
+</Warning>
+</Accordion>
+
+<Accordion title="Calculator">
+### Calculator
+
+Evaluate mathematical expressions safely.
+
+**Supported operations:**
+- Basic: `+`, `-`, `*`, `/`, `%`
+- Exponentiation: `^` (e.g., `2^8 = 256`)
+- Parentheses: `(`, `)`
+- Decimals: `3.14`, `0.5`
+
+**Examples:**
+- "What's 15% of 230?"
+- "Calculate (45 + 17) * 3"
+- "2^10 equals what?"
+
+**How it works:**
+- Recursive descent parser (no `eval()` — 100% safe)
+- Supports nested parentheses and operator precedence
+- Returns the expression and result: `(45 + 17) * 3 = 186`
+
+**Limitations:**
+- Only basic math operations (no trigonometry, logarithms, etc.)
+- No variables or functions
+</Accordion>
+
+<Accordion title="Date & Time">
+### Date & Time
+
+Get the current date and time with optional timezone support.
+
+**Use cases:**
+- "What time is it?"
+- "What's the date today?"
+- "What time is it in Tokyo?"
+
+**Response format:**
+```
+Current date and time: Friday, March 3, 2026, 10:42:15 AM Pacific Standard Time
+ISO 8601: 2026-03-03T10:42:15.123Z
+Unix timestamp: 1772567735
+```
+
+**Timezone support:**
+- Uses IANA timezone database (e.g., `America/New_York`, `Asia/Tokyo`)
+- Defaults to device timezone if not specified
+- Gracefully handles invalid timezones
+</Accordion>
+
+<Accordion title="Device Info">
+### Device Info
+
+Retrieve device hardware information.
+
+**Available info types:**
+- **Battery:** Level and charging status
+- **Memory:** Total, used, and available RAM
+- **Storage:** Total and free disk space
+- **All:** Device model, OS, and all of the above
+
+**Examples:**
+- "How much battery do I have?"
+- "Check available storage"
+- "What's my device info?"
+
+**Response format (all):**
+```
+Memory:
+  Total: 8.0 GB
+  Used: 4.2 GB
+  Available: 3.8 GB
+
+Storage:
+  Total: 128.0 GB
+  Free: 45.3 GB
+
+Battery: 73% (charging)
+
+Device: Samsung Galaxy S23
+OS: android 14
+```
+
+**Privacy:**
+- All data comes from `react-native-device-info` (local queries only)
+- No network requests
+- No data leaves your device
+</Accordion>
+
+<Accordion title="URL Reader">
+### URL Reader
+
+Fetch and read the content of a web page.
+
+**Use cases:**
+- "Summarize this article: https://example.com/article"
+- "What does this page say? https://news.com/story"
+
+**How it works:**
+- Fetches the URL via HTTP GET
+- Strips HTML tags to extract readable text
+- Truncates to 4000 characters to fit context window
+
+**Security:**
+- **Blocks private/local URLs** (localhost, 192.168.x.x, 10.x.x.x, cloud metadata endpoints)
+- **SSRF protection** — Prevents access to internal network resources
+- **15-second timeout** — Prevents hanging on slow servers
+
+**Limitations:**
+- Only works with public HTTP/HTTPS URLs
+- JavaScript-heavy sites may not render properly (fetches HTML source)
+- Some sites block mobile user agents
+
+<Warning>
+URL Reader requires network access. Content is fetched in real-time and may be subject to the website's terms of service.
+</Warning>
+</Accordion>
+
+## Which Models Support Tool Calling?
+
+Not all models support tool calling. Off Grid **automatically detects** tool calling capability at model load time by inspecting the model's **jinja chat template**.
+
+### Supported Models
+
+- **Qwen 3** (all sizes) ✅
+- **Gemma 3** ✅
+- **Llama 3.2** ✅
+- **Phi-4** ✅
+- **Command-R** ✅
+- **Mistral** (most recent versions) ✅
+
+### Unsupported Models
+
+- Older Llama models (pre-3.2) ❌
+- Small instruction models without tool schemas ❌
+- Base models (non-instruct) ❌
+
+If a model doesn't support tool calling, the **Tools** button in the UI is **disabled**.
+
+## How to Use
+
+### 1. Load a Tool-Compatible Model
+
+1. Download a model that supports tool calling (e.g., Qwen 3 3B)
+2. Load it in a conversation
+3. Check if the **Tools** button appears in the chat input (next to the microphone)
+4. If the button is grayed out, the model doesn't support tools
+
+### 2. Enable Tools
+
+Tap the **Tools** button to toggle tool calling on/off for the current conversation:
+
+- **On** (highlighted) — Model can call tools
+- **Off** (gray) — Model only generates text
+
+### 3. Configure Which Tools Are Available
+
+1. Go to **Settings** → **Model Settings** → **Text Generation** → **Enabled Tools**
+2. Toggle individual tools on/off:
+   - ✅ Web Search
+   - ✅ Calculator (enabled by default)
+   - ✅ Date & Time (enabled by default)
+   - ✅ Device Info
+   - ✅ URL Reader
+
+Only enabled tools are sent to the model. Disabled tools are not available for calling.
+
+<Note>
+Tool configuration is **global** — applies to all models and conversations. You can toggle tools on/off per conversation via the Tools button.
+</Note>
+
+### 4. Ask Questions That Require Tools
+
+Just ask naturally — the model decides when to use tools:
+
+**Examples:**
+
+- "What's the weather in Tokyo?" → Web Search
+- "Calculate 15% of 230" → Calculator
+- "What time is it in London?" → Date & Time
+- "How much RAM do I have?" → Device Info
+- "Summarize this page: https://..." → URL Reader
+
+You'll see:
+
+1. **Tool call indicator** — Shows which tool(s) the model is calling
+2. **Tool results** — The tool's output (e.g., search results, calculation answer)
+3. **Final response** — The model synthesizes tool results into a natural answer
+
+## Tool Loop Behavior
+
+To prevent runaway loops and excessive API calls, Off Grid enforces limits:
+
+- **Max iterations:** 3 per generation
+- **Max total tool calls:** 5 across all iterations
+
+If these limits are hit, the model is forced to respond with the information it has.
+
+### How the Loop Works
+
+```
+1. User sends message
+2. Model generates response
+3. If response contains tool calls:
+   → Execute tools
+   → Inject results back into conversation
+   → Model continues generating (iteration 2)
+4. Repeat until model stops calling tools or limits are hit
+5. Final response is returned to user
+```
+
+### Fallback XML Parsing
+
+Some smaller models don't support structured tool calls but can emit XML tags:
+
+```xml
+<tool_call>
+  <name>calculator</name>
+  <arguments>{"expression": "15 * 20"}</arguments>
+</tool_call>
+```
+
+Off Grid detects these and executes the tool, allowing even simpler models to use tools.
+
+## Examples
+
+### Web Search Example
+
+**User:** "What's the latest iPhone?"
+
+**Model (internal):** *Calls web_search tool with query "latest iPhone 2026"*
+
+**Tool Result:**
+```
+1. [Apple iPhone 16 Pro](https://apple.com/iphone)
+   The new iPhone 16 Pro features...
+
+2. [iPhone 16 Review - TechCrunch](https://techcrunch.com/...)
+   Apple's latest flagship...
+```
+
+**Model (final response):** "The latest iPhone is the iPhone 16 Pro, which features... [Full description based on search results]"
+
+---
+
+### Calculator Example
+
+**User:** "What's 23% of 890?"
+
+**Model (internal):** *Calls calculator tool with expression "890 * 0.23"*
+
+**Tool Result:** `890 * 0.23 = 204.7`
+
+**Model (final response):** "23% of 890 is 204.7."
+
+---
+
+### Multi-Tool Example
+
+**User:** "What time is it in Tokyo and how much battery do I have?"
+
+**Model (internal):** *Calls both get_current_datetime (timezone: Asia/Tokyo) and get_device_info (info_type: battery)*
+
+**Tool Results:**
+- Date/Time: `Current date and time: Saturday, March 4, 2026, 2:42 AM Japan Standard Time...`
+- Device Info: `Battery: 73% (charging)`
+
+**Model (final response):** "It's currently 2:42 AM on Saturday, March 4, 2026 in Tokyo. Your battery is at 73% and charging."
+
+## Technical Details
+
+### Tool Definition Schema
+
+Tools are defined in `src/services/tools/registry.ts`:
+
+```typescript
+export const AVAILABLE_TOOLS: ToolDefinition[] = [
+  {
+    id: 'calculator',
+    name: 'calculator',
+    displayName: 'Calculator',
+    description: 'Evaluate mathematical expressions',
+    icon: 'hash',
+    parameters: {
+      expression: {
+        type: 'string',
+        description: 'The mathematical expression to evaluate',
+        required: true,
+      },
+    },
+  },
+  // ...
+];
+```
+
+### OpenAI Schema Conversion
+
+Tools are converted to OpenAI's function calling schema and passed to llama.rn:
+
+```json
+{
+  "type": "function",
+  "function": {
+    "name": "calculator",
+    "description": "Evaluate mathematical expressions",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "expression": {
+          "type": "string",
+          "description": "The mathematical expression to evaluate"
+        }
+      },
+      "required": ["expression"]
+    }
+  }
+}
+```
+
+### Tool Execution
+
+Tool calls are executed in `src/services/tools/handlers.ts`:
+
+```typescript
+export async function executeToolCall(call: ToolCall): Promise<ToolResult> {
+  const start = Date.now();
+  try {
+    let content: string;
+    switch (call.name) {
+      case 'calculator':
+        content = handleCalculator(call.arguments.expression);
+        break;
+      // ...
+    }
+    return { toolCallId: call.id, name: call.name, content, durationMs: Date.now() - start };
+  } catch (error) {
+    return { toolCallId: call.id, name: call.name, content: '', error: error.message, durationMs: Date.now() - start };
+  }
+}
+```
+
+Each tool returns a `ToolResult` with:
+- `toolCallId` — Matches the model's call ID
+- `name` — Tool name
+- `content` — Tool output (or empty if error)
+- `error` — Error message (if tool failed)
+- `durationMs` — Execution time
+
+### System Prompt Hint
+
+When tools are enabled, Off Grid injects a hint into the system prompt:
+
+```
+You have access to the following tools. Use them when appropriate by making tool calls:
+- calculator: Evaluate mathematical expressions
+- get_current_datetime: Get the current date and time
+- get_device_info: Get device hardware information
+
+When a user asks about current information, real-time data, or anything you don't know, USE the appropriate tool instead of saying you cannot help.
+```
+
+This guides the model to use tools proactively.
+
+## Tips
+
+### Getting the Best Results
+
+1. **Use tool-compatible models** — Qwen 3, Gemma 3, Llama 3.2 work best
+2. **Enable only needed tools** — Fewer tools = less confusion for the model
+3. **Ask specific questions** — "What's 23% of 890?" vs. "Do some math"
+4. **Disable tools when not needed** — Tap the Tools button to toggle off
+5. **Check network for web search** — Web search requires internet, other tools work offline
+
+### Troubleshooting
+
+**Tools button is grayed out:**
+- Your model doesn't support tool calling
+- Try loading a different model (Qwen 3, Gemma 3, Llama 3.2)
+
+**Model doesn't call tools:**
+- Ensure tools are enabled (Tools button highlighted)
+- Check that the tool is enabled in settings (Settings → Model Settings → Enabled Tools)
+- Try rephrasing your question more explicitly
+
+**Web search returns no results:**
+- Check your network connection
+- Brave Search may be blocking requests (rare)
+- Try a different search query
+
+**Calculator returns an error:**
+- Ensure the expression only uses supported operators (`+`, `-`, `*`, `/`, `%`, `^`, `(`, `)`)
+- No variables or functions (e.g., `sin()`, `log()`) — use a more capable calculator app for advanced math
+
+**Tool loop hits max iterations:**
+- The model is stuck in a loop
+- Try disabling tools and asking the question again
+- Or rephrase to be more specific
+
+## Privacy
+
+Most tools run **100% on-device**:
+
+- **Calculator** — No network, all local
+- **Date & Time** — No network, all local
+- **Device Info** — No network, all local
+
+**Network-dependent tools:**
+
+- **Web Search** — Sends queries to Brave Search (HTTPS)
+- **URL Reader** — Fetches the specified URL (HTTPS)
+
+If you want 100% offline operation, **disable Web Search and URL Reader** in settings.

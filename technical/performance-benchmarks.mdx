@@ -1,0 +1,282 @@
+---
+title: Performance Benchmarks
+description: Real-world performance data for text generation, vision inference, image generation, and voice transcription across different device tiers
+---
+
+## Overview
+
+Off Grid's performance varies based on device capabilities, model size, quantization level, and hardware acceleration settings. This page provides real-world benchmark data measured on actual devices.
+
+<Note>
+All benchmarks are measured on real hardware. Performance may vary based on device thermal state, background processes, and specific model characteristics.
+</Note>
+
+---
+
+## Text Generation Performance
+
+Text generation speed is measured in tokens per second (tok/s). Higher values indicate faster response generation.
+
+### Flagship Devices (Snapdragon 8 Gen 2+, Apple A17 Pro)
+
+| Configuration | Speed | TTFT | Notes |
+|---------------|-------|------|-------|
+| CPU-only (4-8 threads) | 15-30 tok/s | 0.5-2s | Stable, recommended default |
+| GPU (OpenCL on Android) | 20-40 tok/s | 0.5-2s | Experimental, stability varies |
+| GPU (Metal on iOS) | 20-40 tok/s | 0.5-2s | Stable on devices with 6GB+ RAM |
+
+<Warning>
+iOS devices with ≤4GB RAM (iPhone XS, iPhone 8) have GPU acceleration automatically disabled to prevent crashes from Metal buffer allocation failures.
+</Warning>
+
+### Mid-Range Devices (Snapdragon 7 series)
+
+| Configuration | Speed | TTFT | Notes |
+|---------------|-------|------|-------|
+| CPU-only | 5-15 tok/s | 1-3s | Recommended configuration |
+
+### Performance Factors
+
+Text generation speed is affected by:
+
+- **Model size**: Larger models (7B+) are slower than smaller models (0.5B-3B)
+- **Quantization**: Lower bit quantization (Q2_K, Q3_K_M) is faster than higher bit (Q6_K, Q8_0)
+- **Context length**: More tokens in context = slower inference
+- **Thread count**: Optimal at 4-8 threads on most devices
+- **GPU layers**: More layers offloaded = faster (if stable)
+
+<Tip>
+For optimal performance on mid-range devices, use Q4_K_M quantization with 4-6 CPU threads and disable GPU offloading.
+</Tip>
+
+---
+
+## Vision Inference Performance
+
+Vision models analyze images and generate text descriptions. Inference time varies significantly based on model size.
+
+### SmolVLM 500M
+
+| Device Tier | Inference Time | Use Case |
+|-------------|----------------|----------|
+| Flagship | ~7s per image | Fast document analysis, receipt scanning |
+| Mid-range | ~15s per image | General vision tasks |
+
+### SmolVLM 2.2B
+
+| Device Tier | Inference Time | Use Case |
+|-------------|----------------|----------|
+| Flagship | 10-15s per image | Detailed image understanding, better accuracy |
+| Mid-range | 25-35s per image | Quality-focused tasks where speed is secondary |
+
+### Vision Performance Notes
+
+- Vision inference takes 10-30+ seconds depending on model size and device
+- SmolVLM models offer the fastest inference (recommended for most use cases)
+- Larger models (2B+) provide better understanding but significantly slower
+- Qwen3-VL (2B, 8B) supports multilingual vision but requires more processing time
+
+<Note>
+Vision model memory includes both the main GGUF file and the mmproj (multimodal projector) file. The combined size is used for RAM estimation.
+</Note>
+
+---
+
+## Image Generation Performance
+
+Image generation benchmarks for 512×512 resolution at 20 steps using Stable Diffusion models.
+
+### Android Performance
+
+#### CPU Backend (MNN)
+
+| Device | Time (512×512, 20 steps) | Backend | Notes |
+|--------|--------------------------|---------|-------|
+| Snapdragon 8 Gen 3 | ~15s | MNN (CPU) | Works on all ARM64 devices |
+| Snapdragon 7 series | ~30s | MNN (CPU) | Slower but compatible |
+
+#### NPU Backend (QNN)
+
+| Device | Time (512×512, 20 steps) | Backend | Notes |
+|--------|--------------------------|---------|-------|
+| Snapdragon 8 Gen 2/3/4 | 5-10s | QNN (NPU) | Requires Snapdragon 8 Gen 1+ |
+
+<Tip>
+QNN backend provides 2-3x speedup on supported Snapdragon chipsets. The system automatically detects NPU availability and falls back to MNN if unavailable.
+</Tip>
+
+### iOS Performance (Core ML + ANE)
+
+| Model Type | Device | Time (512×512, 20 steps) | Notes |
+|------------|--------|--------------------------|-------|
+| SD 1.5/2.1 Full (fp16) | A17 Pro, M-series | 8-15s | Fastest, requires ~4GB RAM |
+| SD 1.5/2.1 Palettized (6-bit) | A17 Pro, M-series | 16-30s | ~2x slower due to dequantization |
+| SDXL iOS | A17 Pro, M-series | 10-20s | Higher resolution (768×768) |
+
+<Note>
+Palettized models (~1GB) use 6-bit quantization and are ~2x slower than full-precision models (~4GB) due to real-time dequantization overhead. Use palettized models on devices with limited RAM.
+</Note>
+
+### Image Generation Backend Selection
+
+**Android:**
+- **MNN**: Works on all ARM64 devices (CPU-only)
+- **QNN**: Requires Snapdragon 8 Gen 1+ (NPU acceleration)
+- Automatic runtime detection with fallback to MNN
+
+**iOS:**
+- **Core ML**: Apple's ml-stable-diffusion pipeline
+- **ANE**: Neural Engine acceleration (automatic)
+- DPM-Solver scheduler for faster convergence
+
+---
+
+## Voice Transcription Performance
+
+On-device speech recognition using whisper.cpp.
+
+### Whisper Model Performance Trade-offs
+
+| Model | Speed | Accuracy | File Size | Use Case |
+|-------|-------|----------|-----------|----------|
+| Tiny | Fastest | Good | ~40MB | Quick transcription, notes |
+| Base | Fast | Better | ~75MB | Balanced speed/accuracy (recommended) |
+| Small | Slower | Best | ~150MB | High-accuracy transcription |
+
+<Tip>
+Whisper Base provides the best balance of speed and accuracy for most use cases. Whisper Tiny is ideal for real-time transcription on lower-end devices.
+</Tip>
+
+---
+
+## Device-Specific Recommendations
+
+### Snapdragon 8 Gen 2/3/4
+
+**Text Generation:**
+- 15-30 tok/s with Q4_K_M models
+- Enable GPU offloading experimentally (start with 10-20 layers)
+- Use 6-8 CPU threads for optimal performance
+
+**Image Generation:**
+- QNN backend recommended (5-10s per image)
+- Use `8gen2` variant models for best performance
+- MNN fallback available for compatibility
+
+**Vision:**
+- SmolVLM 500M: ~7s per image
+- SmolVLM 2.2B: 10-15s per image
+
+### Apple A17 Pro / M-Series
+
+**Text Generation:**
+- 20-40 tok/s with Metal GPU acceleration
+- Use 6-8 CPU threads
+- Metal GPU works reliably on devices with 6GB+ RAM
+
+**Image Generation:**
+- Full-precision models (fp16): 8-15s fastest on ANE
+- SDXL iOS: Best quality at 768×768 resolution
+- Palettized models for RAM-constrained devices
+
+**Vision:**
+- SmolVLM 500M: ~7s per image
+- Qwen3-VL 2B: Excellent multilingual support
+
+### Mid-Range Devices (6-8GB RAM)
+
+**Text Generation:**
+- Target 5-15 tok/s with smaller models (0.5B-3B)
+- Use Q4_K_M or Q3_K_M quantization
+- Keep GPU offloading disabled for stability
+- Use 4-6 CPU threads
+
+**Image Generation:**
+- Android: MNN backend (CPU-only, ~30s)
+- iOS: Palettized models (~1GB) recommended
+
+**Vision:**
+- SmolVLM 500M only (2.2B may exceed RAM budget)
+- Expect ~15s inference time
+
+### Low-End Devices (4GB RAM)
+
+**Text Generation:**
+- Use smallest models only (Qwen3 0.6B, SmolLM3 135M)
+- Q2_K or Q3_K_M quantization
+- CPU-only (GPU disabled automatically)
+- Expect 5-10 tok/s
+
+**Image Generation:**
+- Not recommended (high RAM overhead)
+- If needed, use smallest available models with caution
+
+**Vision:**
+- SmolVLM 500M only
+- Expect 20-30s inference time
+- Monitor RAM usage carefully
+
+<Warning>
+Devices with ≤4GB RAM have automatic safeguards: GPU layers forced to 0, context length capped at 2048, and CLIP GPU disabled to prevent native crashes.
+</Warning>
+
+---
+
+## Performance Tuning Tips
+
+### CPU Thread Optimization
+
+- **Optimal range**: 4-6 threads on most devices
+- **Flagship devices**: 6-8 threads for maximum throughput
+- **Diminishing returns**: Beyond 8 threads provides minimal benefit
+
+### Batch Size Selection
+
+- **Smaller (32-128)**: Faster time to first token (TTFT)
+- **Larger (256-512)**: Better overall throughput
+- **Default (256)**: Balanced for mobile devices
+
+### Context Length
+
+- **512**: Short conversations, fastest
+- **2048**: Standard (recommended default)
+- **4096-8192**: Long conversations (requires 8GB+ RAM)
+- Automatic truncation when context is exceeded
+
+### GPU Offloading Strategy
+
+1. Start with 0 layers (CPU-only baseline)
+2. Incrementally increase by 10 layers
+3. Monitor stability and performance
+4. If crashes occur, reduce layer count
+5. Android: OpenCL can be unstable on some Adreno GPUs
+6. iOS: Metal is stable on devices with 6GB+ RAM
+
+<Tip>
+GPU offloading is experimental on Android. Always start with CPU-only and incrementally test GPU acceleration with your specific device and model combination.
+</Tip>
+
+---
+
+## Benchmark Methodology
+
+**Text Generation:**
+- Measured end-to-end from prompt submission to completion
+- TTFT (Time to First Token) measures latency before first token appears
+- tok/s (tokens per second) measures overall generation speed
+- Decode tok/s excludes prompt processing time
+
+**Vision Inference:**
+- Measured from image selection to text response completion
+- Includes image processing and multimodal model inference
+- Does not include image loading/decoding time
+
+**Image Generation:**
+- Measured for 512×512 resolution at 20 steps
+- Includes text encoding, denoising iterations, and VAE decoding
+- Preview generation overhead excluded
+
+**Voice Transcription:**
+- End-to-end from audio recording completion to transcribed text
+- Includes audio processing and whisper.cpp inference
+- Real-time partial transcription adds minimal overhead

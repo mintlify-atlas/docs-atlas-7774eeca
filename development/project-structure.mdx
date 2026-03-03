@@ -1,0 +1,379 @@
+---
+title: Project Structure
+description: Understand the Off Grid codebase organization and architecture
+---
+
+This guide covers the directory structure, key files, native code locations, and service layer architecture of the Off Grid codebase.
+
+## Directory Overview
+
+```
+OffgridMobile/
+├── src/                     # React Native JavaScript/TypeScript code
+├── android/                 # Android native code and build configuration
+├── ios/                     # iOS native code and build configuration
+├── docs/                    # Technical documentation
+└── [config files]           # Root-level config (package.json, tsconfig.json, etc.)
+```
+
+## Source Directory (`src/`)
+
+The `src/` directory contains all React Native application code written in TypeScript.
+
+### Components (`src/components/`)
+
+Reusable UI components following the brutalist design system:
+
+| Component | Purpose |
+|-----------|--------|
+| `AnimatedEntry.tsx` | Staggered fade+slide entrance animation for lists |
+| `AnimatedListItem.tsx` | Entry animation + press feedback combo |
+| `AnimatedPressable.tsx` | Spring scale + haptic press wrapper |
+| `AppSheet.tsx` | Custom swipe-to-dismiss bottom sheet |
+| `ChatInput.tsx` | Message input with attachments, vision/image-mode badges |
+| `ChatMessage.tsx` | Message bubbles with metadata |
+| `DebugSheet.tsx` | Developer debug bottom sheet |
+| `ModelCard.tsx` | Model display card (compact/full modes, icon actions) |
+| `ModelSelectorModal.tsx` | Quick model switcher |
+| `GenerationSettingsModal.tsx` | Image generation settings |
+| `ProjectSelectorSheet.tsx` | Project picker bottom sheet |
+| `CustomAlert.tsx` | Consistent alert dialogs |
+| `Button.tsx` | Reusable button component |
+| `Card.tsx` | Reusable card component |
+| `ThinkingIndicator.tsx` | LLM thinking animation |
+| `VoiceRecordButton.tsx` | Voice recording button |
+
+### Constants (`src/constants/`)
+
+Theme-independent design tokens:
+
+```typescript src/constants/index.ts
+export const TYPOGRAPHY = {
+  display: { fontSize: 22, fontWeight: '200' },
+  h1: { fontSize: 24, fontWeight: '300' },      // Hero text only
+  h2: { fontSize: 16, fontWeight: '400' },      // Screen titles
+  h3: { fontSize: 13, fontWeight: '400' },      // Section headers
+  body: { fontSize: 14, fontWeight: '400' },    // Primary content
+  bodySmall: { fontSize: 13, fontWeight: '400' }, // Descriptions
+  label: { fontSize: 10, fontWeight: '400' },   // Uppercase labels
+  meta: { fontSize: 10, fontWeight: '300' },    // Timestamps
+};
+
+export const SPACING = {
+  xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32
+};
+```
+
+### Hooks (`src/hooks/`)
+
+Custom React hooks for shared logic:
+
+- `useAppState.ts` - App lifecycle state (foreground/background)
+- `useFocusTrigger.ts` - Focus-based animation replay trigger
+- `useVoiceRecording.ts` - Voice recording logic
+- `useWhisperTranscription.ts` - Whisper transcription
+
+### Navigation (`src/navigation/`)
+
+- `AppNavigator.tsx` - Tab and stack navigators using React Navigation
+
+### Screens (`src/screens/`)
+
+Full-screen views:
+
+<AccordionGroup>
+  <Accordion title="Chat & Conversations">
+    - `HomeScreen.tsx` - Dashboard with model status
+    - `ChatScreen.tsx` - Main chat interface with message queue
+    - `ChatsListScreen.tsx` - Conversation list
+  </Accordion>
+
+  <Accordion title="Models & Downloads">
+    - `ModelsScreen.tsx` - Browse and download models from Hugging Face
+    - `ModelDownloadScreen.tsx` - Model download details and progress
+    - `ModelSettingsScreen.tsx` - Text and image model settings (temperature, GPU layers, etc.)
+    - `DownloadManagerScreen.tsx` - Download tracking
+  </Accordion>
+
+  <Accordion title="Media & Storage">
+    - `GalleryScreen.tsx` - Generated images gallery
+    - `StorageSettingsScreen.tsx` - Storage management, orphaned file cleanup
+  </Accordion>
+
+  <Accordion title="Settings & Configuration">
+    - `SettingsScreen.tsx` - App settings hub
+    - `ProjectsScreen.tsx` - Project list
+    - `ProjectDetailScreen.tsx` - Project detail view
+    - `ProjectEditScreen.tsx` - Create/edit projects (custom system prompts)
+    - `SecuritySettingsScreen.tsx` - Security settings
+    - `PassphraseSetupScreen.tsx` - Passphrase configuration
+    - `LockScreen.tsx` - App lock screen
+    - `VoiceSettingsScreen.tsx` - Whisper settings
+    - `DeviceInfoScreen.tsx` - Device hardware info
+  </Accordion>
+
+  <Accordion title="Onboarding">
+    - `OnboardingScreen.tsx` - First-launch onboarding
+  </Accordion>
+</AccordionGroup>
+
+### Services (`src/services/`)
+
+Core business logic layer - **singleton services** that orchestrate native modules and manage state:
+
+<Tabs>
+  <Tab title="LLM & Text Generation">
+    | Service | Purpose |
+    |---------|--------|
+    | `llm.ts` | Text LLM inference (wraps llama.rn) |
+    | `activeModelService.ts` | Model lifecycle management (load/unload) |
+    | `generationService.ts` | Text generation orchestration (background-safe) |
+    | `generationToolLoop.ts` | Multi-turn tool loop orchestration |
+    | `llmToolGeneration.ts` | Low-level tool-aware LLM generation |
+    | `llmHelpers.ts` | RAM-based context/GPU safeguards |
+  </Tab>
+
+  <Tab title="Image Generation">
+    | Service | Purpose |
+    |---------|--------|
+    | `imageGenerationService.ts` | Image generation orchestration (background-safe) |
+    | `localDreamGenerator.ts` | local-dream bridge (Android MNN/QNN) |
+    | `imageGenerator.ts` | Image generation utilities |
+    | `intentClassifier.ts` | Image generation intent detection (pattern/LLM) |
+    | `coreMLModelBrowser.ts` | iOS Core ML model browsing |
+  </Tab>
+
+  <Tab title="Model Management">
+    | Service | Purpose |
+    |---------|--------|
+    | `modelManager.ts` | Download and storage |
+    | `huggingFaceModelBrowser.ts` | HF model browsing with filters |
+    | `huggingface.ts` | HF API utilities |
+    | `backgroundDownloadService.ts` | Background download management (Android) |
+  </Tab>
+
+  <Tab title="Tools & Documents">
+    | Service | Purpose |
+    |---------|--------|
+    | `tools/registry.ts` | Tool definitions and OpenAI schema conversion |
+    | `tools/handlers.ts` | Tool execution dispatch (web search, calculator, date/time, device info) |
+    | `documentService.ts` | Document attachment processing |
+    | `pdfExtractor.ts` | Native PDF text extraction bridge |
+  </Tab>
+
+  <Tab title="Voice & Misc">
+    | Service | Purpose |
+    |---------|--------|
+    | `voiceService.ts` | Voice recording |
+    | `whisperService.ts` | Whisper transcription |
+    | `hardware.ts` | Device info and memory (RAM checks) |
+    | `authService.ts` | Passphrase authentication |
+  </Tab>
+</Tabs>
+
+### Stores (`src/stores/`)
+
+Zustand state management with AsyncStorage persistence:
+
+- `appStore.ts` - Global app state (models, settings, hardware info, gallery)
+- `chatStore.ts` - Conversations and messages
+- `authStore.ts` - Authentication state
+- `projectStore.ts` - Projects (custom system prompts)
+- `whisperStore.ts` - Whisper model state
+
+### Theme (`src/theme/`)
+
+Dynamic light/dark theme system:
+
+- `index.ts` - `useTheme()` hook, `getTheme()` function
+- `palettes.ts` - Light/dark color palettes, shadows, elevation
+- `useThemedStyles.ts` - Memoized themed stylesheet factory
+
+### Types (`src/types/`)
+
+TypeScript type definitions:
+
+- `index.ts` - All interfaces and types
+- `whisper.rn.d.ts` - Whisper native module types
+
+### Utils (`src/utils/`)
+
+Utility functions:
+
+- `haptics.ts` - Haptic feedback triggers
+
+## Android Native Code (`android/`)
+
+```
+android/
+├── app/src/main/java/ai/offgridmobile/
+│   ├── MainActivity.kt                        # Main activity
+│   ├── MainApplication.kt                     # Application entry point
+│   ├── download/                              # Background download manager
+│   │   ├── DownloadManagerModule.kt
+│   │   ├── DownloadManagerPackage.kt
+│   │   └── DownloadCompleteBroadcastReceiver.kt
+│   ├── localdream/                            # local-dream native module
+│   │   ├── LocalDreamModule.kt
+│   │   └── LocalDreamPackage.kt
+│   └── pdf/                                   # PDF text extraction
+│       ├── PdfExtractorModule.kt
+│       └── PdfExtractorPackage.kt
+└── [Gradle build files]
+```
+
+### Key Android Modules
+
+<CardGroup cols={2}>
+  <Card title="LocalDreamModule" icon="image">
+    Bridges to local-dream C++ library for Stable Diffusion inference using MNN (CPU) or QNN (NPU) backends.
+  </Card>
+  <Card title="DownloadManager" icon="download">
+    Native Android DownloadManager wrapper for background model downloads with progress tracking.
+  </Card>
+  <Card title="PdfExtractorModule" icon="file-pdf">
+    Uses Android's `PdfRenderer` API for page-by-page PDF text extraction.
+  </Card>
+</CardGroup>
+
+## iOS Native Code (`ios/`)
+
+```
+ios/
+└── OffgridMobile/
+    ├── AppDelegate.swift                      # Application delegate
+    ├── CoreMLDiffusion/                       # Core ML image generation
+    │   ├── CoreMLDiffusionModule.swift
+    │   └── CoreMLDiffusionModule.m
+    ├── PDFExtractor/                          # PDF text extraction
+    │   └── PDFExtractorModule.swift
+    └── Download/                              # iOS download manager
+        ├── DownloadManagerModule.swift
+        └── DownloadManagerModule.m
+```
+
+### Key iOS Modules
+
+<CardGroup cols={2}>
+  <Card title="CoreMLDiffusionModule" icon="image">
+    Swift bridge to Apple's `ml-stable-diffusion` StableDiffusionPipeline with Neural Engine (ANE) acceleration.
+  </Card>
+  <Card title="PDFExtractorModule" icon="file-pdf">
+    Uses Apple's `PDFKit` framework (`PDFDocument`, `PDFPage`) for text extraction.
+  </Card>
+  <Card title="DownloadManager" icon="download">
+    iOS download manager using RNFS/URLSession with progress callbacks to React Native.
+  </Card>
+</CardGroup>
+
+## Service Layer Architecture
+
+### Singleton Pattern
+
+All core services are **singletons** to prevent:
+- Duplicate model loading
+- Concurrent inference conflicts
+- Memory leaks from orphaned contexts
+- State desynchronization
+
+```typescript
+class ActiveModelService {
+  private loadedTextModelId: string | null = null;
+  private textLoadPromise: Promise<void> | null = null;
+
+  async loadTextModel(modelId: string) {
+    // Guard against concurrent loads
+    if (this.textLoadPromise) {
+      await this.textLoadPromise;
+      if (this.loadedTextModelId === modelId) return;
+    }
+    // ... load logic
+  }
+}
+
+export const activeModelService = new ActiveModelService();
+```
+
+### Background-Safe Orchestration
+
+`generationService` and `imageGenerationService` maintain state independently of React component lifecycle:
+
+```typescript
+class GenerationService {
+  private state: GenerationState = { isGenerating: false, ... };
+  private listeners: Set<GenerationListener> = new Set();
+
+  subscribe(listener: GenerationListener): () => void {
+    this.listeners.add(listener);
+    listener(this.getState()); // Immediate state delivery
+    return () => this.listeners.delete(listener);
+  }
+
+  private notifyListeners(): void {
+    const state = this.getState();
+    this.listeners.forEach(listener => listener(state));
+  }
+}
+```
+
+Screens subscribe on mount, receive current state immediately, and continue receiving updates until unmount. **Generation continues regardless of UI state.**
+
+### Memory-First Loading
+
+All model loads check available RAM before proceeding:
+
+```typescript
+async loadTextModel(modelId: string) {
+  const model = store.downloadedModels.find(m => m.id === modelId);
+
+  // Estimate: file size × 1.5 for text (KV cache overhead)
+  const estimatedRAM = (model.fileSize / (1024**3)) * 1.5;
+
+  // Check against device RAM budget (60% of total)
+  const deviceRAM = await hardware.getDeviceInfo();
+  const budget = (deviceRAM.totalMemory / (1024**3)) * 0.6;
+
+  if (estimatedRAM > budget) {
+    throw new Error('Insufficient RAM');
+  }
+
+  await llmService.loadModel(model.filePath);
+}
+```
+
+## Key Design Patterns
+
+<CardGroup cols={2}>
+  <Card title="Singleton Services" icon="layer-group">
+    All core services are singleton instances exported from their modules to ensure single source of truth.
+  </Card>
+  <Card title="Background-Safe Ops" icon="play">
+    Long-running operations (inference, downloads) continue when screens unmount via lifecycle-independent services.
+  </Card>
+  <Card title="Memory-First" icon="memory">
+    Pre-load RAM checks prevent OOM crashes by blocking loads that would exceed safe limits (60% of device RAM).
+  </Card>
+  <Card title="Combined Asset Tracking" icon="link">
+    Vision models track both GGUF and mmproj files as a single logical unit for memory estimation.
+  </Card>
+</CardGroup>
+
+## Documentation Files
+
+The `docs/` directory contains comprehensive technical documentation:
+
+- `ARCHITECTURE.md` - This comprehensive technical reference
+- `standards/CODEBASE_GUIDE.md` - Comprehensive code walkthrough
+- `design/DESIGN_PHILOSOPHY_SYSTEM.md` - Brutalist design philosophy, theme system
+- `design/VISUAL_HIERARCHY_STANDARD.md` - Visual hierarchy and layout standards
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Testing Guide" icon="flask" href="/development/testing">
+    Learn how to run tests and understand the testing strategy
+  </Card>
+  <Card title="Contributing Guide" icon="code-pull-request" href="/development/contributing-guide">
+    Understand the contribution workflow and quality gates
+  </Card>
+</CardGroup>

@@ -1,0 +1,302 @@
+---
+title: Building from Source
+description: Build Off Grid from source for Android, iOS, and macOS
+---
+
+This guide covers building Off Grid from source, including prerequisites, setup, and platform-specific build commands.
+
+## Prerequisites
+
+<Steps>
+  <Step title="Node.js 20+">
+    Off Grid requires Node.js 20 or higher. Install from [nodejs.org](https://nodejs.org/) or use a version manager like `nvm`.
+
+    ```bash
+    node --version  # Should be 20.x or higher
+    ```
+  </Step>
+
+  <Step title="React Native CLI">
+    Install the React Native CLI globally:
+
+    ```bash
+    npm install -g react-native-cli
+    ```
+  </Step>
+
+  <Step title="Platform-Specific Tools">
+    Install the required tools for your target platform:
+
+    <Tabs>
+      <Tab title="Android">
+        - **JDK 17** - Java Development Kit (Temurin/Adoptium recommended)
+        - **Android SDK (API 36)** - Install via Android Studio
+        - **Android NDK r27** - Required for native module compilation
+        - **Android Studio** - Recommended for device emulation and debugging
+
+        Verify your setup:
+        ```bash
+        java -version      # Should be 17.x
+        echo $ANDROID_HOME # Should point to Android SDK
+        ```
+      </Tab>
+
+      <Tab title="iOS">
+        - **Xcode 15+** with iOS 17 SDK - Download from Mac App Store
+        - **CocoaPods** - iOS dependency manager
+        - **Apple Developer Account** - Required for device deployment (free tier available)
+
+        Install CocoaPods:
+        ```bash
+        sudo gem install cocoapods
+        ```
+
+        Verify Xcode:
+        ```bash
+        xcodebuild -version  # Should be 15.x or higher
+        ```
+      </Tab>
+
+      <Tab title="macOS">
+        The iOS App Store version runs natively on Apple Silicon Macs via Mac Catalyst / iPad compatibility. No additional setup required beyond the iOS prerequisites.
+      </Tab>
+    </Tabs>
+  </Step>
+</Steps>
+
+## Clone and Install
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/alichherawalla/off-grid-mobile.git
+    cd off-grid-mobile
+    ```
+  </Step>
+
+  <Step title="Install JavaScript dependencies">
+    ```bash
+    npm install
+    ```
+
+    This installs all React Native and JavaScript dependencies defined in `package.json`.
+  </Step>
+
+  <Step title="Platform setup">
+    <Tabs>
+      <Tab title="Android">
+        ```bash
+        cd android
+        ./gradlew clean
+        cd ..
+        ```
+
+        This cleans the Gradle build cache and prepares the Android project.
+      </Tab>
+
+      <Tab title="iOS">
+        ```bash
+        cd ios
+        pod install
+        cd ..
+        ```
+
+        This installs native iOS dependencies (CocoaPods) including llama.rn, whisper.rn, and Core ML modules.
+      </Tab>
+    </Tabs>
+  </Step>
+</Steps>
+
+## Development Builds
+
+### Start Metro Bundler
+
+First, start the Metro bundler in a terminal:
+
+```bash
+npm start
+```
+
+Leave this running and open a new terminal for platform-specific commands.
+
+### Android
+
+<CodeGroup>
+```bash npm script
+npm run android
+```
+
+```bash Direct command
+react-native run-android --mode=debug --appId ai.offgridmobile.dev
+```
+</CodeGroup>
+
+This launches the app on a connected Android device or emulator.
+
+<Note>
+  Make sure you have a device connected via ADB or an emulator running before executing the build command.
+</Note>
+
+### iOS
+
+<CodeGroup>
+```bash npm script
+npm run ios
+```
+
+```bash Direct command
+react-native run-ios
+```
+
+```bash Xcode
+# Alternative: Open in Xcode
+open ios/OffgridMobile.xcworkspace
+# Select target device → Build & Run (⌘R)
+```
+</CodeGroup>
+
+<Warning>
+  Always open `OffgridMobile.xcworkspace`, **not** `OffgridMobile.xcodeproj`. The workspace includes CocoaPods dependencies.
+</Warning>
+
+## Release Builds
+
+### Android
+
+<Steps>
+  <Step title="Create keystore (first time only)">
+    ```bash
+    keytool -genkeypair -v -storetype PKCS12 -keystore my-release-key.keystore \
+      -alias my-key-alias -keyalg RSA -keysize 2048 -validity 10000
+    ```
+
+    Store the keystore file in a secure location (not in the repository).
+  </Step>
+
+  <Step title="Configure signing">
+    Create or edit `android/gradle.properties`:
+
+    ```properties android/gradle.properties
+    MYAPP_RELEASE_STORE_FILE=my-release-key.keystore
+    MYAPP_RELEASE_KEY_ALIAS=my-key-alias
+    MYAPP_RELEASE_STORE_PASSWORD=your_keystore_password
+    MYAPP_RELEASE_KEY_PASSWORD=your_key_password
+    ```
+
+    <Warning>
+      Never commit `gradle.properties` with credentials to version control. Add it to `.gitignore`.
+    </Warning>
+  </Step>
+
+  <Step title="Build the release APK">
+    ```bash
+    cd android
+    ./gradlew assembleRelease
+    ```
+
+    The signed APK will be at:
+    ```
+    android/app/build/outputs/apk/release/app-release.apk
+    ```
+  </Step>
+</Steps>
+
+### iOS
+
+<Steps>
+  <Step title="Open Xcode">
+    ```bash
+    open ios/OffgridMobile.xcworkspace
+    ```
+  </Step>
+
+  <Step title="Archive the build">
+    1. Select **Product** → **Archive**
+    2. Wait for the archive to complete
+    3. The Organizer window will open automatically
+  </Step>
+
+  <Step title="Distribute the app">
+    1. Select your archive
+    2. Click **Distribute App**
+    3. Choose distribution method:
+       - **App Store Connect** - For App Store submission
+       - **Ad Hoc** - For TestFlight or direct distribution
+       - **Development** - For local testing
+    4. Follow the signing and provisioning workflow
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+### Android Build Errors
+
+<AccordionGroup>
+  <Accordion title="Gradle build fails">
+    Clear the Gradle cache and rebuild:
+
+    ```bash
+    cd android
+    ./gradlew clean
+    ./gradlew assembleDebug --rerun-tasks
+    ```
+  </Accordion>
+
+  <Accordion title="NDK not found">
+    Install the NDK via Android Studio:
+
+    1. Open **Tools** → **SDK Manager**
+    2. Select **SDK Tools** tab
+    3. Check **NDK (Side by side)**
+    4. Click **Apply** to install
+  </Accordion>
+
+  <Accordion title="Multiple build tools versions">
+    Edit `android/build.gradle` and ensure `buildToolsVersion` matches your installed version:
+
+    ```gradle
+    buildToolsVersion = "34.0.0"
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### iOS Build Errors
+
+<AccordionGroup>
+  <Accordion title="CocoaPods errors">
+    Clean and reinstall pods:
+
+    ```bash
+    cd ios
+    rm -rf Pods Podfile.lock
+    pod install
+    cd ..
+    ```
+  </Accordion>
+
+  <Accordion title="Signing errors">
+    1. Open `OffgridMobile.xcworkspace` in Xcode
+    2. Select the project in the navigator
+    3. Go to **Signing & Capabilities**
+    4. Select your **Team** (requires Apple Developer account)
+    5. Xcode will automatically manage provisioning profiles
+  </Accordion>
+
+  <Accordion title="Build hangs on 'Installing' step">
+    This usually means the device is locked. Unlock your device and try again.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Project Structure" icon="folder-tree" href="/development/project-structure">
+    Learn how the codebase is organized
+  </Card>
+  <Card title="Testing Guide" icon="flask" href="/development/testing">
+    Run tests and understand the testing strategy
+  </Card>
+  <Card title="Contributing" icon="code-pull-request" href="/development/contributing-guide">
+    Learn the contribution workflow and quality gates
+  </Card>
+</CardGroup>

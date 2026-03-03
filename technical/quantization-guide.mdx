@@ -1,0 +1,448 @@
+---
+title: Quantization Guide
+description: GGUF quantization methods, size vs quality trade-offs, RAM requirements, and recommendations for different device tiers
+---
+
+## Overview
+
+GGUF quantization reduces model size by representing weights with fewer bits. Lower quantization = smaller files and faster inference, but reduced quality. This guide helps you choose the right quantization level for your device and use case.
+
+<Note>
+Quantization is lossy compression. Lower bit depths (Q2_K, Q3_K_M) sacrifice accuracy for speed and size. Higher bit depths (Q6_K, Q8_0) preserve quality but require more RAM.
+</Note>
+
+---
+
+## Quantization Methods
+
+GGUF supports multiple quantization methods with different size/quality trade-offs.
+
+### Quantization Reference Table
+
+| Quantization | Bits per Weight | Quality | 7B Model Size | RAM Required (~1.5x) | Use Case |
+|--------------|-----------------|---------|---------------|----------------------|----------|
+| **Q2_K** | 2-3 bit | Lowest | ~2.5 GB | ~3.5 GB | Very constrained devices (4GB RAM) |
+| **Q3_K_M** | 3-4 bit | Low-Medium | ~3.3 GB | ~4.5 GB | Budget devices, testing |
+| **Q4_K_M** | 4-5 bit | Good | ~4.0 GB | ~5.5 GB | **Recommended default** |
+| **Q5_K_M** | 5-6 bit | Very Good | ~5.0 GB | ~6.5 GB | Quality-focused users (8GB+ RAM) |
+| **Q6_K** | 6 bit | Excellent | ~6.0 GB | ~7.5 GB | Flagship devices (12GB+ RAM) |
+| **Q8_0** | 8 bit | Near FP16 | ~7.5 GB | ~9.0 GB | Maximum quality (16GB+ RAM) |
+
+<Tip>
+**Q4_K_M is the recommended default** for most users. It provides the best balance between size, quality, and compatibility across device tiers.
+</Tip>
+
+---
+
+## Size vs Quality Trade-offs
+
+### Quality Degradation by Quantization Level
+
+| Quantization | Quality vs FP16 | Typical Issues | Acceptable Use |
+|--------------|-----------------|----------------|----------------|
+| Q8_0 | ~98% | Negligible | Production, critical applications |
+| Q6_K | ~95% | Minor coherence issues | High-quality conversational AI |
+| Q5_K_M | ~92% | Occasional repetition | Quality-focused users |
+| Q4_K_M | ~88% | Noticeable but usable | General use (recommended) |
+| Q3_K_M | ~80% | Frequent errors, repetition | Budget devices, testing |
+| Q2_K | ~65% | Severe quality loss | Extremely constrained devices |
+
+<Warning>
+Q2_K and Q3_K_M quantization levels may produce incoherent responses, repetitive output, or factual errors. Use only when device RAM constraints require it.
+</Warning>
+
+### Perceptual Quality by Model Size
+
+Quantization impact varies by model size:
+
+**Large models (7B+):**
+- Q4_K_M: Excellent quality, minimal degradation
+- Q3_K_M: Usable but noticeable quality loss
+- Q2_K: Poor quality, frequent errors
+
+**Medium models (3B-7B):**
+- Q4_K_M: Good quality (recommended)
+- Q3_K_M: Acceptable for casual use
+- Q2_K: Usable for simple tasks only
+
+**Small models (0.5B-3B):**
+- Q4_K_M: Best available quality
+- Q3_K_M: Noticeable degradation
+- Q2_K: Significant quality loss
+
+<Tip>
+For small models (< 3B parameters), always prefer Q4_K_M or higher. The quality loss from aggressive quantization is more pronounced on smaller models.
+</Tip>
+
+---
+
+## RAM Requirements
+
+### Formula
+
+```typescript
+requiredRAM = modelFileSize × 1.5
+```
+
+The 1.5x multiplier accounts for:
+- Model weights loaded in memory
+- KV cache for context window
+- Activations during inference
+- llama.cpp runtime buffers
+
+### RAM by Quantization (7B Model)
+
+| Quantization | File Size | RAM Required | Minimum Device RAM |
+|--------------|-----------|--------------|--------------------|
+| Q2_K | 2.5 GB | 3.5 GB | 6 GB |
+| Q3_K_M | 3.3 GB | 4.5 GB | 8 GB |
+| Q4_K_M | 4.0 GB | 5.5 GB | 10 GB |
+| Q5_K_M | 5.0 GB | 6.5 GB | 12 GB |
+| Q6_K | 6.0 GB | 7.5 GB | 14 GB |
+| Q8_0 | 7.5 GB | 9.0 GB | 16 GB |
+
+<Note>
+Minimum device RAM assumes 60% memory budget. For example, a 4.0 GB model (Q4_K_M) requires ~5.5 GB, which fits in 10 GB device RAM (60% = 6 GB budget).
+</Note>
+
+### RAM by Quantization (3B Model)
+
+| Quantization | File Size | RAM Required | Minimum Device RAM |
+|--------------|-----------|--------------|--------------------|
+| Q2_K | 1.1 GB | 1.6 GB | 3 GB |
+| Q3_K_M | 1.4 GB | 2.1 GB | 4 GB |
+| Q4_K_M | 1.8 GB | 2.7 GB | 5 GB |
+| Q5_K_M | 2.1 GB | 3.2 GB | 6 GB |
+| Q6_K | 2.5 GB | 3.8 GB | 7 GB |
+| Q8_0 | 3.2 GB | 4.8 GB | 8 GB |
+
+---
+
+## Device Tier Recommendations
+
+### Low-End Devices (4GB RAM)
+
+**Budget: ~2.4 GB**
+
+**Recommended:**
+- Qwen3 0.6B Q3_K_M (~400 MB)
+- SmolLM3 135M Q4_K_M (~150 MB)
+- Llama 3.2 1B Q2_K (~600 MB)
+
+**Quantization strategy:**
+- Use Q2_K or Q3_K_M only
+- Avoid models larger than 1B parameters
+- Prioritize smallest models for stability
+
+**Trade-offs:**
+- Expect quality degradation
+- Frequent repetition or errors
+- Limited conversational coherence
+
+<Warning>
+Devices with 4GB RAM have automatic safeguards: GPU disabled, context capped at 2048, CLIP GPU off. Only the smallest models will run reliably.
+</Warning>
+
+### Mid-Range Devices (6GB RAM)
+
+**Budget: ~3.6 GB**
+
+**Recommended:**
+- Llama 3.2 3B Q3_K_M (~1.4 GB)
+- Qwen3 1.6B Q4_K_M (~1.0 GB)
+- Phi-4 Mini Q4_K_M (~1.8 GB)
+
+**Quantization strategy:**
+- **Q4_K_M is the sweet spot**
+- Q3_K_M for larger models (7B)
+- Avoid Q5_K_M+ (insufficient RAM)
+
+**Trade-offs:**
+- Q4_K_M: Good quality, minimal issues
+- Q3_K_M: Acceptable but noticeable degradation
+
+### High-End Devices (8GB RAM)
+
+**Budget: ~4.8 GB**
+
+**Recommended:**
+- Qwen3 7B Q3_K_M (~3.3 GB)
+- Llama 3.2 3B Q5_K_M (~2.1 GB)
+- Phi-4 Mini Q6_K (~2.5 GB)
+
+**Quantization strategy:**
+- Q4_K_M for 7B models (recommended)
+- Q5_K_M or Q6_K for smaller models (3B)
+- Avoid Q8_0 unless model is < 5B
+
+**Trade-offs:**
+- Q4_K_M 7B: Excellent balance
+- Q5_K_M 3B: Very high quality
+
+### Flagship Devices (12GB+ RAM)
+
+**Budget: ~7.2 GB+**
+
+**Recommended:**
+- Qwen3 14B Q4_K_M (~8.0 GB on 16GB devices)
+- Llama 3.3 8B Q5_K_M (~5.0 GB)
+- Qwen3 7B Q6_K (~6.0 GB)
+
+**Quantization strategy:**
+- Q5_K_M or Q6_K for best quality
+- Q4_K_M for larger models (14B+)
+- Q8_0 for maximum fidelity (if RAM allows)
+
+**Trade-offs:**
+- Q5_K_M: Excellent quality, negligible loss
+- Q6_K: Near-perfect quality
+- Q8_0: Virtually indistinguishable from FP16
+
+<Tip>
+On flagship devices, prioritize Q5_K_M or Q6_K for the best user experience. The quality improvement over Q4_K_M is noticeable in conversational coherence and factual accuracy.
+</Tip>
+
+---
+
+## Quantization Impact on Performance
+
+### Inference Speed by Quantization
+
+Lower quantization = faster inference (fewer bits to process)
+
+| Quantization | Relative Speed | Flagship Device (7B) | Mid-Range Device (3B) |
+|--------------|----------------|----------------------|------------------------|
+| Q2_K | Fastest | ~35 tok/s | ~18 tok/s |
+| Q3_K_M | Very Fast | ~32 tok/s | ~16 tok/s |
+| Q4_K_M | Fast | ~30 tok/s | ~15 tok/s |
+| Q5_K_M | Moderate | ~25 tok/s | ~12 tok/s |
+| Q6_K | Slower | ~22 tok/s | ~10 tok/s |
+| Q8_0 | Slowest | ~18 tok/s | ~8 tok/s |
+
+<Note>
+Speed estimates are approximate and vary by model architecture, device CPU, and generation settings (temperature, top-p, etc.).
+</Note>
+
+### Speed vs Quality Decision Matrix
+
+| Priority | Device RAM | Model Size | Recommended Quantization |
+|----------|------------|------------|---------------------------|
+| Speed | Any | Any | Q3_K_M or Q4_K_M |
+| Quality | 8GB+ | 3B-7B | Q5_K_M or Q6_K |
+| Balance | 6GB+ | 3B-7B | **Q4_K_M** |
+| Size | 4GB | 0.5B-1B | Q2_K or Q3_K_M |
+
+---
+
+## Choosing the Right Quantization
+
+### Decision Flow
+
+1. **Check device RAM:**
+   - 4GB → Q2_K or Q3_K_M only
+   - 6GB → Q3_K_M or Q4_K_M
+   - 8GB → Q4_K_M or Q5_K_M
+   - 12GB+ → Q5_K_M, Q6_K, or Q8_0
+
+2. **Choose model size:**
+   - Low RAM (4GB) → 0.5B-1B max
+   - Mid RAM (6GB) → 1B-3B
+   - High RAM (8GB) → 3B-7B
+   - Flagship (12GB+) → 7B-14B+
+
+3. **Select quantization:**
+   - Budget/constrained → Q2_K, Q3_K_M
+   - Balanced (default) → **Q4_K_M**
+   - Quality-focused → Q5_K_M, Q6_K
+   - Maximum quality → Q8_0
+
+### Example Selections
+
+**iPhone XS (4GB RAM):**
+- Qwen3 0.6B Q3_K_M (~400 MB → ~600 MB RAM)
+- SmolLM3 135M Q4_K_M (~150 MB → ~225 MB RAM)
+
+**Samsung Galaxy S21 (8GB RAM):**
+- Llama 3.2 3B Q4_K_M (~1.8 GB → ~2.7 GB RAM)
+- Qwen3 7B Q3_K_M (~3.3 GB → ~4.5 GB RAM)
+
+**iPhone 15 Pro (8GB RAM):**
+- Qwen3 7B Q4_K_M (~4.0 GB → ~5.5 GB RAM)
+- Llama 3.2 3B Q6_K (~2.5 GB → ~3.8 GB RAM)
+
+**Samsung Galaxy S24 Ultra (12GB RAM):**
+- Qwen3 14B Q4_K_M (~8.0 GB on 16GB device)
+- Llama 3.3 8B Q5_K_M (~5.0 GB → ~6.5 GB RAM)
+
+---
+
+## Advanced Quantization Details
+
+### Quantization Method Breakdown
+
+**Q2_K (2-3 bit):**
+- Mixed 2-bit and 3-bit quantization
+- K-quants use importance matrix for better quality
+- Smallest size, lowest quality
+- High compression ratio (~10:1 vs FP16)
+
+**Q3_K_M (3-4 bit, Medium):**
+- Mixed 3-bit and 4-bit quantization
+- Medium variant balances size/quality
+- Better than Q2_K, smaller than Q4_K_M
+- Compression ratio (~7:1 vs FP16)
+
+**Q4_K_M (4-5 bit, Medium):**
+- Mixed 4-bit and 5-bit quantization
+- **Industry standard for mobile AI**
+- Excellent quality/size balance
+- Compression ratio (~5:1 vs FP16)
+
+**Q5_K_M (5-6 bit, Medium):**
+- Mixed 5-bit and 6-bit quantization
+- Minimal quality loss vs FP16
+- Noticeably better than Q4_K_M
+- Compression ratio (~4:1 vs FP16)
+
+**Q6_K (6 bit):**
+- Pure 6-bit quantization
+- Excellent quality preservation
+- Close to FP16 in blind tests
+- Compression ratio (~3:1 vs FP16)
+
+**Q8_0 (8 bit):**
+- Pure 8-bit quantization
+- Near-lossless compression
+- Indistinguishable from FP16 in most cases
+- Compression ratio (~2:1 vs FP16)
+
+### K-Quants Importance Matrix
+
+K-quant methods (Q2_K, Q3_K_M, Q4_K_M, Q5_K_M, Q6_K) use an importance matrix to:
+- Preserve critical weights at higher precision
+- Aggressively quantize less important weights
+- Improve quality vs non-K methods (Q4_0, Q5_0, Q8_0)
+
+<Tip>
+Always prefer K-quant variants (Q4_K_M) over legacy methods (Q4_0). K-quants provide better quality at the same file size.
+</Tip>
+
+---
+
+## Quantization and Vision Models
+
+Vision models follow the same quantization principles as text models.
+
+### Vision Model RAM Formula
+
+```typescript
+requiredRAM = (modelFileSize + mmProjSize) × 1.5
+```
+
+### Example: SmolVLM
+
+| Variant | Model Size | mmproj Size | Total RAM | Min Device RAM |
+|---------|------------|-------------|-----------|----------------|
+| SmolVLM 500M Q4_K_M | 475 MB | 125 MB | ~900 MB | 2 GB |
+| SmolVLM 2.2B Q4_K_M | 1.2 GB | 350 MB | ~2.3 GB | 4 GB |
+
+<Note>
+Vision models always include mmproj overhead. Choose quantization based on combined size (model + mmproj).
+</Note>
+
+---
+
+## Troubleshooting Quantization Issues
+
+### Poor Quality Output
+
+**Symptoms:** Repetitive text, incoherent responses, factual errors
+
+**Causes:**
+- Quantization too aggressive (Q2_K, Q3_K_M)
+- Model too small for task complexity
+
+**Solutions:**
+1. Upgrade to Q4_K_M or higher
+2. Use larger model with Q4_K_M instead of smaller model with Q6_K
+3. Adjust generation settings (temperature, repeat penalty)
+
+### Model Won't Load (RAM Error)
+
+**Symptoms:** "Cannot load model" error, RAM budget exceeded
+
+**Causes:**
+- Quantization level too high for device RAM
+- Model file size × 1.5 exceeds 60% budget
+
+**Solutions:**
+1. Choose lower quantization (Q5_K_M → Q4_K_M → Q3_K_M)
+2. Choose smaller model (7B → 3B → 1B)
+3. Unload current model first
+
+### Slow Inference Speed
+
+**Symptoms:** < 5 tok/s on flagship device, < 2 tok/s on mid-range
+
+**Causes:**
+- High quantization (Q6_K, Q8_0) on mid-range device
+- Model size too large for device
+
+**Solutions:**
+1. Reduce quantization to Q4_K_M or Q3_K_M
+2. Reduce context length (4096 → 2048)
+3. Increase CPU threads (if < 4)
+4. Enable GPU offloading (test stability)
+
+---
+
+## Recommended Models by Use Case
+
+### Casual Conversation (Speed Priority)
+
+- **4GB RAM:** Qwen3 0.6B Q3_K_M
+- **6GB RAM:** Llama 3.2 3B Q4_K_M
+- **8GB RAM:** Qwen3 7B Q4_K_M
+- **12GB+ RAM:** Llama 3.3 8B Q4_K_M
+
+### Professional Writing (Quality Priority)
+
+- **6GB RAM:** Phi-4 Mini Q4_K_M
+- **8GB RAM:** Qwen3 7B Q5_K_M
+- **12GB+ RAM:** Qwen3 14B Q5_K_M or Llama 3.3 8B Q6_K
+
+### Code Assistance
+
+- **6GB RAM:** Qwen3 Coder 1.5B Q4_K_M
+- **8GB RAM:** Qwen3 Coder 7B Q4_K_M
+- **12GB+ RAM:** Qwen3 Coder 14B Q5_K_M
+
+### Multilingual Support
+
+- **6GB RAM:** Qwen3 3B Q4_K_M
+- **8GB RAM:** Command-R 7B Q4_K_M
+- **12GB+ RAM:** Qwen3 14B Q5_K_M
+
+### Vision Tasks
+
+- **4GB RAM:** SmolVLM 500M Q4_K_M
+- **6GB+ RAM:** SmolVLM 2.2B Q4_K_M
+- **8GB+ RAM:** Qwen3-VL 2B Q4_K_M
+
+---
+
+## Summary
+
+<Tip>
+**Quick Recommendation: Use Q4_K_M** unless you have a specific reason to deviate. It provides the best balance of quality, size, and performance for 90% of use cases.
+</Tip>
+
+**Key Takeaways:**
+
+1. **Q4_K_M is the recommended default** for most users and devices
+2. **Q5_K_M or Q6_K for quality-focused users** with 8GB+ RAM
+3. **Q2_K or Q3_K_M only for constrained devices** (4GB RAM)
+4. **RAM = fileSize × 1.5** for text models
+5. **Lower quantization = faster but lower quality**
+6. **Device tier dictates quantization choice** more than preference
+7. **K-quant variants are superior** to legacy methods (Q4_K_M > Q4_0)

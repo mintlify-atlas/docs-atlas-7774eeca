@@ -1,0 +1,497 @@
+---
+title: Contributing Guide
+description: Contribution workflow, quality gates, and code review process for Off Grid
+---
+
+Contributions to Off Grid are welcome! This guide covers the fork-branch-PR workflow, pre-commit quality gates, code style, and the automated CI review loop.
+
+## Contribution Workflow
+
+<Steps>
+  <Step title="Fork the repository">
+    1. Go to [github.com/alichherawalla/off-grid-mobile](https://github.com/alichherawalla/off-grid-mobile)
+    2. Click **Fork** in the top right
+    3. Clone your fork locally:
+
+    ```bash
+    git clone https://github.com/YOUR_USERNAME/off-grid-mobile.git
+    cd off-grid-mobile
+    ```
+  </Step>
+
+  <Step title="Create a feature branch">
+    Use a descriptive branch name that indicates the type of change:
+
+    <Tabs>
+      <Tab title="Feature">
+        ```bash
+        git checkout -b feat/your-feature-name
+        ```
+      </Tab>
+      <Tab title="Bug Fix">
+        ```bash
+        git checkout -b fix/bug-description
+        ```
+      </Tab>
+      <Tab title="Documentation">
+        ```bash
+        git checkout -b docs/update-readme
+        ```
+      </Tab>
+      <Tab title="Chore">
+        ```bash
+        git checkout -b chore/update-dependencies
+        ```
+      </Tab>
+      <Tab title="Test">
+        ```bash
+        git checkout -b test/add-llm-tests
+        ```
+      </Tab>
+    </Tabs>
+
+    <Note>
+      **Never commit directly to `main`.** Always create a feature branch.
+    </Note>
+  </Step>
+
+  <Step title="Install dependencies">
+    ```bash
+    npm install
+    cd android && ./gradlew clean && cd ..
+    cd ios && pod install && cd ..
+    ```
+  </Step>
+
+  <Step title="Make your changes">
+    - Follow the existing code style and conventions
+    - Use `useTheme()` and `useThemedStyles()` for all styling - never hardcode colors
+    - Use `TYPOGRAPHY` and `SPACING` from `src/constants/` for theme-independent tokens
+    - Write tests for new functionality
+    - Update documentation if needed
+  </Step>
+
+  <Step title="Test your changes">
+    Ensure all tests pass before committing:
+
+    ```bash
+    npm test                  # Run all tests
+    npm run lint              # Lint code
+    npx tsc --noEmit          # Type check
+    ```
+
+    See the [Testing Guide](/development/testing) for more details.
+  </Step>
+
+  <Step title="Commit your changes">
+    The pre-commit hook will automatically run quality gates:
+
+    ```bash
+    git add .
+    git commit -m "feat: add new feature description"
+    ```
+
+    <Warning>
+      If the pre-commit hook fails, **fix the issue and recommit**. Never skip with `--no-verify`.
+    </Warning>
+  </Step>
+
+  <Step title="Push and create a pull request">
+    ```bash
+    git push -u origin feat/your-feature-name
+    ```
+
+    Then:
+    1. Go to GitHub and create a pull request from your branch to `main`
+    2. Fill out the PR template (see below)
+    3. Wait for automated reviews (Gemini, Codecov, SonarCloud)
+    4. Address review feedback
+  </Step>
+</Steps>
+
+## Pre-Commit Quality Gates (Husky)
+
+Off Grid uses Husky to automatically run quality gates on every `git commit`. The checks are **scoped to the file types you staged**, so you only run relevant tests.
+
+### What Runs When
+
+| Staged file type | Checks that run automatically |
+|------------------|-------------------------------|
+| `.ts` / `.tsx` / `.js` / `.jsx` | ESLint (staged only), `tsc --noEmit`, `npm test` |
+| `.swift` | SwiftLint (staged only), `npm run test:ios` |
+| `.kt` / `.kts` | `compileDebugKotlin` (type check), `lintDebug`, `npm run test:android` |
+
+### Requirements
+
+- **SwiftLint:** Install via `brew install swiftlint` (skipped with a warning if not installed)
+- **Android checks:** Require the Gradle wrapper in `android/`
+
+### Hook Behavior
+
+```bash Example pre-commit output
+▶ JS/TS lint (staged files)...
+✓ ESLint passed
+
+▶ TypeScript type check...
+✓ No type errors
+
+▶ JS/TS tests...
+ PASS  src/services/__tests__/llm.test.ts
+ PASS  src/stores/__tests__/chatStore.test.ts
+✓ All tests passed
+```
+
+<Warning>
+  **Before writing new code, ensure tests exist for your changes.** If the hook fails, fix the issue and recommit - never skip with `--no-verify`.
+</Warning>
+
+## Code Style and Conventions
+
+### TypeScript Style
+
+- Use TypeScript for all new code
+- Define interfaces for all complex types
+- Avoid `any` - use proper types or `unknown`
+- Use descriptive variable names
+
+### React Native Style
+
+<AccordionGroup>
+  <Accordion title="Styling Guidelines">
+    - **Never hardcode colors** - use `useTheme()` and `colors.*`
+    - **Never hardcode spacing/typography** - use `SPACING` and `TYPOGRAPHY` constants
+    - **Always use `useThemedStyles`** - never inline styles or static `StyleSheet.create`
+    - **No pixel values** - use design tokens
+
+    ```typescript Good example
+    const { colors } = useTheme();
+    const styles = useThemedStyles(createStyles);
+
+    const createStyles = (colors: ThemeColors) => ({
+      container: {
+        backgroundColor: colors.background,
+        padding: SPACING.md,
+      },
+      title: {
+        ...TYPOGRAPHY.h2,
+        color: colors.text,
+      },
+    });
+    ```
+
+    ```typescript Bad example
+    const styles = StyleSheet.create({
+      container: {
+        backgroundColor: '#000000',  // ❌ Hardcoded color
+        padding: 12,                 // ❌ Magic number
+      },
+      title: {
+        fontSize: 16,                // ❌ Hardcoded typography
+        color: 'white',              // ❌ Hardcoded color
+      },
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Component Guidelines">
+    - Use functional components with hooks (no class components)
+    - Keep components small and focused (single responsibility)
+    - Extract reusable logic into custom hooks
+    - Use `AnimatedPressable` for interactive elements (includes haptics)
+    - Use `AnimatedEntry` or `AnimatedListItem` for list items (staggered animations)
+  </Accordion>
+
+  <Accordion title="Performance Guidelines">
+    - Use `FlatList` or `FlashList` for large lists (not `.map()` inside `ScrollView`)
+    - Use `React.memo()` for expensive components
+    - Use `useMemo()` and `useCallback()` to prevent unnecessary re-renders
+    - Check with React DevTools Profiler if unsure
+  </Accordion>
+
+  <Accordion title="Native Module Guidelines">
+    - **Both platforms required** - no new native module without Android + iOS implementations
+    - **Register in Xcode** - add new iOS modules to `project.pbxproj` build target
+    - **Cross-platform paths** - resolve file paths correctly on both platforms (no hardcoded `/` vs `\\`)
+    - **Progress reporting** - long-running tasks must report progress to UI
+  </Accordion>
+</AccordionGroup>
+
+### Service Layer Guidelines
+
+- **Singleton pattern** for all core services (prevent duplicate instances)
+- **Background-safe operations** for long-running tasks (independent of component lifecycle)
+- **Memory checks** before model operations (check RAM budget)
+- **Comprehensive logging** for debugging
+- **Graceful error handling** with user-friendly messages
+
+### Testing Guidelines
+
+- Write tests for all new functionality
+- Test stores with `@testing-library/react-native`
+- Test services with Jest mocks
+- Test components with snapshot tests or RTL queries
+- Ensure coverage doesn't decrease (Codecov will block PRs)
+
+## Pull Request Template
+
+When creating a PR, fill out the template at `.github/pull_request_template.md`:
+
+```markdown
+## Summary
+
+<!-- Briefly describe what this PR does and why -->
+
+## Type of Change
+
+- [ ] Bug fix (non-breaking change that fixes an issue)
+- [ ] New feature (non-breaking change that adds functionality)
+- [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
+- [ ] Refactor (code change that neither fixes a bug nor adds a feature)
+- [ ] Chore (build process, CI, dependency updates, etc.)
+
+## Screenshots / Screen Recordings
+
+<!-- Mandatory for any UI change. Remove sections that don't apply. -->
+
+### Android
+
+| Before | After |
+|--------|-------|
+|        |       |
+
+### iOS
+
+| Before | After |
+|--------|-------|
+|        |       |
+
+## Checklist
+
+### General
+
+- [ ] My code follows the project's coding style and conventions
+- [ ] I have performed a self-review of my code
+- [ ] I have added/updated comments where the logic isn't self-evident
+- [ ] My changes generate no new warnings or errors
+
+### Testing
+
+- [ ] I have tested on **Android** (physical device or emulator)
+- [ ] I have tested on **iOS** (physical device or simulator)
+- [ ] I have tested in **light mode** and **dark mode**
+- [ ] Existing tests pass locally (`npm test`)
+- [ ] I have added tests that prove my fix is effective or my feature works
+
+### React Native Specific
+
+- [ ] No new native module without corresponding platform implementation (Android + iOS)
+- [ ] New native modules are added to the Xcode project build target (`project.pbxproj`)
+- [ ] No hardcoded pixel values — uses `SPACING` / `TYPOGRAPHY` constants from the theme
+- [ ] Styles use `useThemedStyles` pattern (not inline or static `StyleSheet.create`)
+- [ ] Animations/gestures work smoothly on both platforms
+- [ ] Large lists use `FlatList` / `FlashList` (not `.map()` inside `ScrollView`)
+- [ ] No unnecessary re-renders introduced (check with React DevTools Profiler if unsure)
+
+### Performance & Models
+
+- [ ] Downloads / long-running tasks report progress to the UI
+- [ ] File paths are resolved correctly on both platforms (no hardcoded `/` vs `\\`)
+- [ ] Large files (models, assets) are not committed to the repository
+
+### Security
+
+- [ ] No secrets, API keys, or credentials are included in the code
+- [ ] User input is validated/sanitized where applicable
+
+## Related Issues
+
+<!-- Link any related issues: Fixes #123, Relates to #456 -->
+
+## Additional Notes
+
+<!-- Any context, trade-offs, or follow-up work worth mentioning -->
+```
+
+<Note>
+  **Do NOT include "Generated with Claude Code" or any AI attribution in PR descriptions.**
+</Note>
+
+## CI Review Loop
+
+After pushing your PR, **three automated reviewers** will analyze your code. You must address all feedback before merging.
+
+### Automated Reviewers
+
+<Tabs>
+  <Tab title="Gemini Bot">
+    **What it checks:** Code quality, style, logic issues, best practices
+
+    **How to address:**
+    1. Pull down comments:
+       ```bash
+       gh api repos/alichherawalla/off-grid-mobile/pulls/YOUR_PR_NUMBER/comments
+       gh api repos/alichherawalla/off-grid-mobile/pulls/YOUR_PR_NUMBER/reviews
+       ```
+    2. Fix code or reply explaining why the suggestion doesn't apply
+    3. Push fixes
+    4. Comment `/gemini review` on the PR to trigger a fresh review pass
+
+    **Example review comment:**
+    ```
+    Consider using useMemo here to prevent unnecessary recalculations on every render.
+    ```
+  </Tab>
+
+  <Tab title="Codecov">
+    **What it checks:** Test coverage thresholds and coverage deltas
+
+    **How to address:**
+    1. Check the Codecov report in the PR comment (lists uncovered lines)
+    2. Add missing tests to cover new code
+    3. Ensure new code is covered by tests
+    4. Push updated tests
+
+    **Example failure:**
+    ```
+    Coverage decreased by 2.5% - blocking PR
+    Uncovered lines:
+    - src/services/llm.ts:142-156
+    - src/stores/chatStore.ts:89
+    ```
+
+    **Badge:** [![codecov](https://codecov.io/gh/alichherawalla/off-grid-mobile/graph/badge.svg)](https://codecov.io/gh/alichherawalla/off-grid-mobile)
+  </Tab>
+
+  <Tab title="SonarCloud">
+    **What it checks:** Security hotspots, code smells, duplications, bugs, maintainability issues
+
+    **How to address:**
+    1. Click the SonarCloud link in the PR checks
+    2. Review flagged issues (especially **security hotspots** and **duplications**)
+    3. Fix issues in code
+    4. Re-run local quality gates:
+       ```bash
+       npm run lint && npm test && npx tsc --noEmit
+       ```
+    5. Push fixes
+
+    **Example issues:**
+    - Security: "Ensure this password is not hardcoded"
+    - Code smell: "Extract this duplicated code into a shared function"
+    - Bug: "This function may return undefined but is typed as non-nullable"
+  </Tab>
+</Tabs>
+
+### Review Loop Workflow
+
+<Steps>
+  <Step title="Push code">
+    ```bash
+    git push -u origin feat/your-feature
+    ```
+
+    Wait for all three reviewers to report (usually 2-5 minutes).
+  </Step>
+
+  <Step title="Pull down feedback">
+    ```bash
+    # Gemini comments
+    gh api repos/alichherawalla/off-grid-mobile/pulls/YOUR_PR_NUMBER/comments
+    gh api repos/alichherawalla/off-grid-mobile/pulls/YOUR_PR_NUMBER/reviews
+
+    # Check CI status
+    gh pr checks
+    ```
+  </Step>
+
+  <Step title="Address all feedback">
+    - **Gemini:** Fix code or reply with explanations
+    - **Codecov:** Add tests for uncovered lines
+    - **SonarCloud:** Fix security hotspots, code smells, and duplications
+  </Step>
+
+  <Step title="Re-run local quality gates">
+    ```bash
+    npm run lint && npm test && npx tsc --noEmit
+    ```
+
+    Ensure everything passes locally before pushing.
+  </Step>
+
+  <Step title="Push fixes">
+    ```bash
+    git add .
+    git commit -m "fix: address review feedback"
+    git push
+    ```
+  </Step>
+
+  <Step title="Re-trigger Gemini (if needed)">
+    Comment on the PR:
+
+    ```
+    /gemini review
+    ```
+
+    This triggers a fresh Gemini review pass.
+  </Step>
+
+  <Step title="Repeat until green">
+    Continue the loop until all three reviewers pass with no blocking issues:
+
+    - ✅ Gemini: No unresolved comments
+    - ✅ Codecov: Coverage maintained or increased
+    - ✅ SonarCloud: Quality gate passed, no security hotspots
+  </Step>
+</Steps>
+
+## Development Guidelines Summary
+
+<CardGroup cols={2}>
+  <Card title="Styling" icon="palette">
+    - Use `useTheme()` and `useThemedStyles()` for all styling
+    - Never hardcode colors, spacing, or typography
+    - Use `TYPOGRAPHY` and `SPACING` constants
+  </Card>
+
+  <Card title="Services" icon="layer-group">
+    - Follow singleton pattern
+    - Implement background-safe operations
+    - Check memory before model operations
+    - Add comprehensive logging
+  </Card>
+
+  <Card title="Components" icon="cube">
+    - Functional components with hooks
+    - Small, focused components
+    - Use `AnimatedPressable` for interactions
+    - Use `FlatList` for large lists
+  </Card>
+
+  <Card title="Testing" icon="flask">
+    - Write tests for all new functionality
+    - Ensure coverage doesn't decrease
+    - Test on both Android and iOS
+    - Test light and dark modes
+  </Card>
+</CardGroup>
+
+## Getting Help
+
+- **Documentation:** Start with [Architecture](/technical/architecture-overview) and [Project Structure](/development/project-structure)
+- **Community:** Join the [Slack workspace](https://join.slack.com/t/off-grid-mobile/shared_invite/zt-3q7kj5gr6-rVzx5gl5LKPQh4mUE2CCvA)
+- **Issues:** Check [GitHub Issues](https://github.com/alichherawalla/off-grid-mobile/issues) for known problems
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Building from Source" icon="hammer" href="/development/building-from-source">
+    Set up your development environment
+  </Card>
+  <Card title="Testing Guide" icon="flask" href="/development/testing">
+    Learn how to run tests locally
+  </Card>
+  <Card title="Project Structure" icon="folder-tree" href="/development/project-structure">
+    Understand the codebase organization
+  </Card>
+</CardGroup>

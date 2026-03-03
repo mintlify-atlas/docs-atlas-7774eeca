@@ -1,0 +1,383 @@
+---
+title: Privacy & Security
+description: Understanding Off Grid's privacy-first architecture and security features
+---
+
+## Privacy-First Design
+
+Off Grid is built with privacy as the core principle. All AI inference happens entirely on your device with **zero network activity** after initial model downloads.
+
+## Zero Network Activity After Download
+
+### What Requires Network
+
+From `ARCHITECTURE.md:1036-1042`:
+
+**During setup only:**
+- HuggingFace API (model metadata browsing)
+- HuggingFace CDN (model file downloads)
+- xororz HuggingFace repos (image model listings)
+
+**Optional network features:**
+- Web Search tool (requires explicit user enablement)
+- Brave Search scraping (only when web search tool is used)
+
+### What Works Offline
+
+From `ARCHITECTURE.md:1044-1047`:
+
+**After model download:**
+- ✅ **Zero network activity**
+- ✅ **All inference happens on-device**
+- ✅ **Enable airplane mode and use indefinitely**
+- ✅ **All conversations, images, and data stay local**
+
+<Note>
+  You can verify this yourself: Download a model, enable airplane mode, and use Off Grid normally. Everything works except model downloads and the optional web search tool.
+</Note>
+
+## On-Device Storage
+
+### Where Your Data Lives
+
+From `ARCHITECTURE.md:1027-1033`:
+
+All data is stored in the app's **private internal storage**, inaccessible to other apps:
+
+| Data Type | Storage Location | Encryption |
+|-----------|------------------|------------|
+| **Conversations** | AsyncStorage | OS-level encryption |
+| **Models** | Internal app files directory | OS-level encryption |
+| **Generated Images** | Internal app files directory | OS-level encryption |
+| **Settings** | AsyncStorage | OS-level encryption |
+| **Projects** | AsyncStorage | OS-level encryption |
+
+**Android sandboxing**: All app data is isolated in the app's private directory (`/data/data/ai.offgridmobile/`). Other apps cannot access this directory.
+
+**iOS sandboxing**: All app data is in the app's container, protected by iOS app sandbox.
+
+### Data Persistence
+
+From `src/stores/appStore.ts:280-283` and other stores:
+
+All stores use Zustand's `persist` middleware with AsyncStorage:
+
+```typescript
+persist(
+  (set, get) => ({ /* state */ }),
+  {
+    name: 'local-llm-app-storage',
+    storage: createJSONStorage(() => AsyncStorage),
+  }
+)
+```
+
+**What's persisted:**
+- Downloaded models metadata
+- Active model IDs
+- All settings (temperature, context, GPU config)
+- Conversations and message history
+- Projects (custom system prompts)
+- Generated images gallery
+- Background download state
+
+**Persistence behavior:**
+- Automatic save on every state change
+- Automatic rehydration on app launch
+- Survives app restarts and device reboots
+
+## Passphrase Lock Feature
+
+### Overview
+
+From `ARCHITECTURE.md:260-269` and `src/stores/authStore.ts`:
+
+Protect your conversations with an app-level passphrase lock:
+
+- **App-level security layer** on top of OS encryption
+- **Locks on app backgrounding** (configurable timeout)
+- **Failed attempt lockout** (5 attempts = 5 minute lockout)
+- **Biometric unlock** (planned feature)
+
+### Setting Up Passphrase Lock
+
+<Steps>
+  <Step title="Navigate to Security Settings">
+    Settings → Security → Passphrase Lock
+  </Step>
+  
+  <Step title="Enable Lock">
+    Toggle "Enable Passphrase Lock" on
+  </Step>
+  
+  <Step title="Create Passphrase">
+    Enter a strong passphrase (minimum length enforced)
+  </Step>
+  
+  <Step title="Confirm Passphrase">
+    Re-enter to confirm
+  </Step>
+  
+  <Step title="App Locks Immediately">
+    App is now locked and requires passphrase on next launch
+  </Step>
+</Steps>
+
+<Warning>
+  **There is no passphrase recovery**. If you forget your passphrase, you'll need to uninstall and reinstall the app, which will delete all conversations and downloaded models.
+  
+  Choose a passphrase you can remember!
+</Warning>
+
+### How Passphrase Lock Works
+
+From `src/stores/authStore.ts:1-98`:
+
+**Lock behavior:**
+- App starts locked when passphrase is enabled (`isLocked: true`)
+- Lock screen shown on app launch
+- Lock triggers when app goes to background
+- Unlock required to access any app features
+
+**Failed attempt protection:**
+- Maximum 5 failed attempts before lockout
+- Lockout duration: 5 minutes
+- Failed attempts counter resets on successful unlock
+- Lockout timer shown in lock screen
+
+**Implementation details:**
+- Passphrase stored securely in Android Keystore
+- No biometric data stored on device (biometric unlock is planned)
+- Lock state persisted across app restarts
+
+Refer to `src/stores/authStore.ts:22-85` for the complete implementation.
+
+### Use Cases for Passphrase Lock
+
+<Tip>
+  **Privacy-sensitive conversations**: Legal consultations, personal journals, health discussions
+  
+  **Shared devices**: Prevent others from accessing your AI conversations
+  
+  **Security compliance**: Meet organizational security requirements for sensitive data
+  
+  **Peace of mind**: Extra layer of protection if device is lost or stolen
+</Tip>
+
+## No Telemetry or Analytics
+
+Off Grid collects **zero telemetry or analytics**:
+
+- ❌ No usage tracking
+- ❌ No crash reporting (unless you opt-in via OS settings)
+- ❌ No analytics SDKs
+- ❌ No phone-home behavior
+- ❌ No A/B testing
+- ❌ No user profiling
+
+**What this means:**
+
+- Your prompts never leave your device
+- Your conversations are never uploaded
+- Your model usage is never tracked
+- Your generated images are never seen by anyone else
+- No third-party services ever see your data
+
+<Note>
+  The only time Off Grid communicates with external servers is during model downloads from HuggingFace CDN. Once downloaded, all AI inference is 100% offline.
+</Note>
+
+## Offline Verification (Airplane Mode Test)
+
+### How to Verify Privacy
+
+Prove to yourself that Off Grid works completely offline:
+
+<Steps>
+  <Step title="Download a Model">
+    Download any text model (e.g., Qwen 3 0.6B)
+  </Step>
+  
+  <Step title="Wait for Download to Complete">
+    Ensure model is fully downloaded
+  </Step>
+  
+  <Step title="Enable Airplane Mode">
+    Turn on airplane mode on your device
+  </Step>
+  
+  <Step title="Use Off Grid Normally">
+    - Load the model
+    - Start a conversation
+    - Send messages
+    - Generate images (if you have an image model)
+    - Create projects
+    - Change settings
+  </Step>
+  
+  <Step title="Verify Everything Works">
+    All features work except:
+    - Model downloads (requires network)
+    - Web search tool (requires network)
+  </Step>
+</Steps>
+
+<Tip>
+  **Advanced verification**: Use a network monitoring tool (like Charles Proxy or Wireshark) to confirm zero network traffic during inference.
+</Tip>
+
+## Data Encryption (OS-Level)
+
+From `ARCHITECTURE.md:1027-1033`:
+
+### Android Encryption
+
+**File-based encryption (Android 7.0+):**
+- All app data encrypted with unique key
+- Encryption key protected by device PIN/password
+- Data inaccessible when device locked
+- AsyncStorage uses encrypted storage backend
+
+**Keystore protection:**
+- Passphrase stored in Android Keystore
+- Hardware-backed key storage (if available)
+- Keys never exposed to app code
+
+### iOS Encryption
+
+**Data Protection API:**
+- All files encrypted by default (iOS 8+)
+- Encryption key derived from device passcode + hardware UID
+- Data inaccessible when device locked
+- AsyncStorage uses encrypted NSUserDefaults
+
+**Keychain protection:**
+- Passphrase stored in iOS Keychain
+- Hardware-backed secure enclave (iPhone 5s+)
+- Biometric protection (planned)
+
+<Note>
+  Off Grid relies on OS-level encryption rather than implementing custom encryption. This is more secure than custom implementations and benefits from regular OS security updates.
+</Note>
+
+## Privacy Features Summary
+
+### What Off Grid Does
+
+✅ **100% on-device inference** - No cloud API calls
+
+✅ **Local storage only** - All data in app's private directory
+
+✅ **OS-level encryption** - Leverages platform security features
+
+✅ **Optional passphrase lock** - Extra security layer
+
+✅ **No telemetry** - Zero usage tracking
+
+✅ **Open architecture** - Review ARCHITECTURE.md for full technical details
+
+### What Off Grid Doesn't Do
+
+❌ **Never uploads prompts** - All prompts stay on device
+
+❌ **Never syncs conversations** - No cloud sync (planned as opt-in)
+
+❌ **Never phones home** - No background network activity
+
+❌ **Never shares data** - No third-party SDKs or analytics
+
+❌ **Never uses cloud APIs** - No OpenAI, Anthropic, or other API calls
+
+## Security Best Practices
+
+### For Maximum Privacy
+
+<Steps>
+  <Step title="Enable Passphrase Lock">
+    Set a strong passphrase in Security Settings
+  </Step>
+  
+  <Step title="Use Strong Device PIN">
+    Ensure your device has a strong PIN/password (OS encryption relies on this)
+  </Step>
+  
+  <Step title="Download Models Over Secure Network">
+    Use trusted Wi-Fi or VPN when downloading models
+  </Step>
+  
+  <Step title="Disable Web Search Tool">
+    Settings → Model Settings → Enabled Tools → Disable "web_search"
+  </Step>
+  
+  <Step title="Verify Offline Mode">
+    Periodically test airplane mode to confirm no network dependency
+  </Step>
+</Steps>
+
+### For Sensitive Use Cases
+
+**Legal/medical/personal sensitive data:**
+
+1. **Enable passphrase lock** (mandatory)
+2. **Disable web search tool** (prevents any network requests)
+3. **Use airplane mode** during sensitive conversations
+4. **Regularly review generated images gallery** and delete as needed
+5. **Consider device encryption status** (should be enabled by default on modern devices)
+
+**Corporate/organizational use:**
+
+1. **Verify compliance** with org security policies
+2. **Test offline mode** in controlled environment
+3. **Document data flow** (all local, no cloud)
+4. **Review model sources** (HuggingFace public repos)
+5. **Consider MDM integration** (for enterprise deployment)
+
+## Comparison to Cloud AI Services
+
+| Feature | Off Grid | Cloud AI (OpenAI, Anthropic, etc.) |
+|---------|----------|------------------------------------|
+| **Data leaves device** | ❌ Never | ✅ Always |
+| **Requires internet** | ❌ After setup only | ✅ Always |
+| **Prompts stored remotely** | ❌ Never | ✅ Usually (30+ days) |
+| **Subject to ToS changes** | ❌ No | ✅ Yes |
+| **Usage limits** | ❌ Unlimited | ✅ Rate limits, costs |
+| **Telemetry** | ❌ None | ✅ Extensive |
+| **Third-party access** | ❌ Impossible | ✅ Possible (subpoenas, breaches) |
+| **Works offline** | ✅ Yes | ❌ No |
+| **Privacy audit** | ✅ Self-verifiable | ❌ Trust-based |
+
+## Frequently Asked Questions
+
+### Can Off Grid see my conversations?
+
+No. All conversations are stored locally on your device in encrypted storage. Off Grid has no servers, no cloud sync, and no telemetry.
+
+### What happens to my data if I uninstall?
+
+All data is permanently deleted. Conversations, models, settings, and generated images are removed when you uninstall the app.
+
+### Can I export my data?
+
+Conversation export/import with encryption is planned. Currently, all data stays on device.
+
+### Is my data backed up?
+
+Only if your device's OS backup is enabled (iCloud for iOS, Google Drive for Android). Backups are encrypted by the OS.
+
+### Can I use Off Grid in a corporate environment?
+
+Yes, if your organization allows offline AI tools. All data stays on device, making it suitable for sensitive corporate use cases.
+
+### What about the web search tool?
+
+The web search tool is **optional** and requires explicit user enablement. When used, it makes network requests to Brave Search. You can disable it in Settings → Model Settings → Enabled Tools.
+
+### How can I verify privacy claims?
+
+Enable airplane mode after downloading a model and use the app normally. Everything works except model downloads and web search (if enabled).
+
+## Additional Resources
+
+- **Technical Architecture**: Review `ARCHITECTURE.md` in the source repository for complete technical details
+- **Store Implementation**: See `src/stores/` for data persistence implementation
+- **Security Implementation**: See `src/stores/authStore.ts` for passphrase lock details

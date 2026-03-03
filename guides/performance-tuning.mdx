@@ -1,0 +1,492 @@
+---
+title: Performance Tuning
+description: Optimize inference speed and quality in Off Grid
+---
+
+## Overview
+
+Off Grid provides extensive performance tuning options to optimize AI inference for your device. All settings are global and affect every model uniformly.
+
+Access settings from: **Settings → Model Settings**
+
+Refer to `ARCHITECTURE.md:272-297` for the complete settings reference.
+
+## CPU Threads Settings
+
+### Optimal Thread Count
+
+CPU threads control how many processor cores are used for inference:
+
+**From `ARCHITECTURE.md:346-350`:**
+
+- **More threads = faster inference** (up to a point)
+- **Optimal: 4-6 threads** on most devices
+- **Flagship devices: 6-8 threads**
+- **Diminishing returns beyond 8 threads**
+
+### How to Configure
+
+<Steps>
+  <Step title="Open Model Settings">
+    Settings → Model Settings → CPU Threads
+  </Step>
+  
+  <Step title="Adjust Thread Count">
+    Range: 1-12 threads (default: 4)
+  </Step>
+  
+  <Step title="Test Performance">
+    Send a test message and observe tokens/second in generation details
+  </Step>
+  
+  <Step title="Find Your Sweet Spot">
+    Increase threads until performance stops improving
+  </Step>
+</Steps>
+
+<Tip>
+  **Start with 4 threads**, then increment to 6, then 8. Most devices see optimal performance at 6 threads. Going beyond 8 threads rarely improves speed and can cause thermal throttling.
+</Tip>
+
+<Warning>
+  Higher thread counts increase power consumption and heat. If your device gets hot, reduce thread count to prevent thermal throttling.
+</Warning>
+
+## Batch Size Tuning
+
+### What is Batch Size?
+
+Batch size determines how many tokens are processed in a single inference pass.
+
+**From `ARCHITECTURE.md:352-355`:**
+
+- **Smaller (32-128)**: Faster first token (lower TTFT)
+- **Larger (256-512)**: Better throughput (higher tok/s)
+- **Default: 512**: Balanced for mobile
+
+### Trade-offs
+
+| Batch Size | First Token Speed | Overall Throughput | Memory Usage |
+|------------|-------------------|--------------------|--------------|
+| 32-64 | Very Fast | Lower | Low |
+| 128-256 | Fast | Good | Medium |
+| 512 | Medium | **Best** | Higher |
+
+### Configuration
+
+<Steps>
+  <Step title="Navigate to Settings">
+    Settings → Model Settings → Batch Size
+  </Step>
+  
+  <Step title="Choose Your Priority">
+    - **Low latency apps**: Use 128
+    - **Balanced**: Use 256 or 512 (default)
+    - **Maximum throughput**: Use 512
+  </Step>
+</Steps>
+
+<Note>
+  The default of 512 is optimized for mobile devices and provides the best balance of throughput and memory efficiency.
+</Note>
+
+## Context Length Trade-offs
+
+### Memory and Speed Impact
+
+Context length controls how much conversation history the model remembers:
+
+**From `ARCHITECTURE.md:357-363`:**
+
+- **Longer context = more memory + slower inference**
+- **Automatic truncation** when context limit exceeded
+
+### Recommended Settings
+
+| Context Length | RAM Impact | Use Case |
+|----------------|------------|----------|
+| 512 | Minimal | Short Q&A, one-shot prompts |
+| 2048 | Low | **Standard conversations (default)** |
+| 4096 | Medium | Long conversations, document analysis |
+| 8192 | High | Multi-turn complex tasks (requires 8GB+ RAM) |
+
+<Warning>
+  **Devices with ≤4GB RAM**: Context is automatically capped at 2048 to prevent crashes.
+  
+  **Devices with 4-6GB RAM**: Capped at 2048 for stability.
+  
+  **Devices with 6-8GB RAM**: Can use up to 4096.
+  
+  **Devices with 8GB+ RAM**: Can use up to 8192.
+</Warning>
+
+Refer to `ARCHITECTURE.md:327-342` for the RAM-aware context capping logic.
+
+### Configuration
+
+<Steps>
+  <Step title="Open Context Settings">
+    Settings → Model Settings → Context Length
+  </Step>
+  
+  <Step title="Choose Based on RAM">
+    Select a value appropriate for your device's RAM:
+    - 4GB RAM: 512 or 2048
+    - 6GB RAM: 2048 or 4096
+    - 8GB+ RAM: 4096 or 8192
+  </Step>
+  
+  <Step title="Monitor Memory">
+    Check Settings → Device Info to see current RAM usage
+  </Step>
+</Steps>
+
+<Tip>
+  If you experience app crashes or slowdowns during long conversations, reduce context length to 2048 or lower.
+</Tip>
+
+## GPU/NPU Offloading
+
+### Platform Support
+
+**Android**: OpenCL GPU offloading on Qualcomm Adreno GPUs (experimental)
+
+**iOS**: Metal GPU acceleration (enabled by default)
+
+### How GPU Layers Work
+
+From `ARCHITECTURE.md:365-372`:
+
+- Specify number of transformer layers to offload (0-99)
+- **More layers = faster** (if stable)
+- **OpenCL backend experimental** - can crash on some devices
+- **Start with 0, incrementally increase**
+- **Automatic fallback to CPU** if GPU initialization fails
+
+### Safety on Low-RAM Devices
+
+From `ARCHITECTURE.md:327-342`:
+
+**Devices with ≤4GB RAM** (iPhone XS, iPhone 8, etc.):
+- GPU layers **forced to 0** (CPU-only)
+- Reason: Metal/OpenCL buffer allocation can call `abort()` before JavaScript catches errors, crashing the app
+- CLIP GPU also disabled for vision models
+
+**Devices with 6GB+ RAM**:
+- Metal/OpenCL enabled normally
+- Configurable GPU layers (0-99)
+
+### Configuration (Android)
+
+<Steps>
+  <Step title="Enable GPU Acceleration">
+    Settings → Model Settings → Enable GPU (toggle on)
+  </Step>
+  
+  <Step title="Start Conservative">
+    Set GPU Layers to 0 initially
+  </Step>
+  
+  <Step title="Increment Gradually">
+    Increase by 5-10 layers at a time:
+    - Test with a conversation
+    - Monitor for crashes
+    - If stable, increase further
+  </Step>
+  
+  <Step title="Find Your Limit">
+    Keep increasing until you hit instability, then back off by 10 layers
+  </Step>
+</Steps>
+
+<Warning>
+  **GPU offloading on Android is experimental**. If you experience crashes:
+  1. Set GPU layers back to 0
+  2. Disable GPU entirely
+  3. Stick to CPU-only inference
+  
+  The OpenCL backend can fail during initialization on some devices.
+</Warning>
+
+### Configuration (iOS)
+
+On iOS, Metal GPU is enabled by default:
+
+- **6GB+ RAM devices**: Full Metal support, adjustable GPU layers
+- **4GB RAM devices**: GPU disabled automatically for safety
+
+<Note>
+  You can adjust GPU layers in Settings → Model Settings → GPU Layers, but the app will enforce device-specific safety limits.
+</Note>
+
+## Flash Attention
+
+### What is Flash Attention?
+
+Flash attention is an optimized attention mechanism that speeds up inference.
+
+**From `ARCHITECTURE.md:284`:**
+
+- **User-configurable toggle** for faster inference
+- **Automatically disabled when GPU layers > 0 on Android** (llama.cpp compatibility)
+- Default: Enabled
+
+### Compatibility
+
+<Warning>
+  **Android limitation**: Flash attention is incompatible with GPU offloading. It's automatically disabled when you set GPU layers > 0.
+  
+  **iOS**: Flash attention works with Metal GPU acceleration.
+</Warning>
+
+### Configuration
+
+<Steps>
+  <Step title="Open Flash Attention Setting">
+    Settings → Model Settings → Flash Attention
+  </Step>
+  
+  <Step title="Enable for CPU Inference">
+    Toggle on for ~10-20% faster CPU inference
+  </Step>
+  
+  <Step title="Leave On by Default">
+    The app will auto-disable it when needed (GPU layers > 0 on Android)
+  </Step>
+</Steps>
+
+## KV Cache Type
+
+### Memory vs Quality Tradeoff
+
+KV cache stores attention key-value pairs. You can quantize the cache to save memory:
+
+**From `ARCHITECTURE.md:285`:**
+
+Configurable cache quantization options:
+- **f16** - Full precision (highest quality, most memory)
+- **q8_0** - 8-bit quantization (balanced, **default**)
+- **q4_0** - 4-bit quantization (lowest memory, slight quality loss)
+
+### When to Use Each Type
+
+| Cache Type | Quality | Memory Savings | Use Case |
+|------------|---------|----------------|----------|
+| **f16** | Best | None | 8GB+ RAM devices, maximum quality |
+| **q8_0** | Excellent | ~50% | **Default, best balance** |
+| **q4_0** | Good | ~75% | Low RAM devices, very long contexts |
+
+### Configuration
+
+<Steps>
+  <Step title="Navigate to Cache Settings">
+    Settings → Model Settings → KV Cache Type
+  </Step>
+  
+  <Step title="Choose Based on Device">
+    - **4GB RAM**: Use q4_0 to maximize context length
+    - **6-8GB RAM**: Use q8_0 (default)
+    - **8GB+ RAM**: Use f16 for maximum quality
+  </Step>
+  
+  <Step title="Test Quality">
+    Try a multi-turn conversation to ensure quality is acceptable
+  </Step>
+</Steps>
+
+<Tip>
+  If you're running out of memory during long conversations, switch to q4_0. You'll get ~75% memory savings with minimal quality impact.
+</Tip>
+
+<Note>
+  The default q8_0 setting (from `src/stores/appStore.ts:117`) provides excellent quality with significant memory savings compared to f16.
+</Note>
+
+## Device-Specific Recommendations
+
+### Low-End Devices (4GB RAM)
+
+**Optimal Settings:**
+- CPU Threads: 4
+- Batch Size: 256
+- Context Length: 2048 (hard cap)
+- GPU Layers: 0 (forced, safety)
+- Flash Attention: On
+- KV Cache Type: q4_0
+- Model: Q4_K_M quantization, under 2B parameters
+
+### Mid-Range Devices (6-8GB RAM)
+
+**Optimal Settings:**
+- CPU Threads: 6
+- Batch Size: 512
+- Context Length: 4096
+- GPU Layers: 0-20 (test incrementally)
+- Flash Attention: On
+- KV Cache Type: q8_0
+- Model: Q4_K_M or Q5_K_M, up to 7B parameters
+
+### Flagship Devices (8GB+ RAM)
+
+**Optimal Settings:**
+- CPU Threads: 6-8
+- Batch Size: 512
+- Context Length: 8192
+- GPU Layers: 20-40 (test incrementally)
+- Flash Attention: On
+- KV Cache Type: q8_0 or f16
+- Model: Q5_K_M or Q6_K, up to 8B parameters
+
+## Image Generation Settings
+
+### Steps (Quality vs Speed)
+
+**From `ARCHITECTURE.md:288`:**
+
+- Range: 4-50 steps
+- Default: 20
+- **More steps = better quality, slower generation**
+- **Fewer steps = faster, lower quality**
+
+<Tip>
+  4-10 steps: Fast drafts (~3-5s on NPU)
+  
+  20 steps: Balanced quality (default, ~5-10s on NPU)
+  
+  30-50 steps: Maximum quality (~15-25s on NPU)
+</Tip>
+
+### Guidance Scale (Prompt Adherence)
+
+**From `ARCHITECTURE.md:289`:**
+
+- Range: 1-20
+- Default: 7.5
+- **Higher values** = stricter adherence to prompt, more contrast
+- **Lower values** = more creative freedom, softer images
+
+### Image Generation Threads
+
+**From `ARCHITECTURE.md:296`:**
+
+- Range: 1-8 CPU threads
+- Default: 4
+- Only affects CPU-based image generation (MNN backend on Android)
+
+### Platform-Specific Performance
+
+From `ARCHITECTURE.md:138-141`:
+
+| Platform | Backend | Performance (512×512, 20 steps) |
+|----------|---------|----------------------------------|
+| Android CPU (MNN) | Snapdragon 8 Gen 3 | ~15s |
+| Android CPU (MNN) | Snapdragon 7 series | ~30s |
+| Android NPU (QNN) | Snapdragon 8 Gen 1+ | ~5-10s (chipset-dependent) |
+| iOS ANE (Core ML) | A17 Pro/M-series | ~8-15s |
+| iOS ANE (Core ML) | Palettized models | ~2x slower (dequantization overhead) |
+
+## Performance Monitoring
+
+### Generation Details
+
+Enable detailed performance metrics:
+
+<Steps>
+  <Step title="Enable Generation Details">
+    Settings → Model Settings → Show Generation Details (toggle on)
+  </Step>
+  
+  <Step title="View Metrics During Generation">
+    See real-time metrics in chat:
+    - **tok/s** - Overall tokens per second
+    - **Decode tok/s** - Decode-only speed
+    - **TTFT** - Time to first token
+    - **Token count** - Total tokens generated
+  </Step>
+  
+  <Step title="Use for Tuning">
+    Adjust settings and compare tok/s to find optimal configuration
+  </Step>
+</Steps>
+
+### Device Info
+
+Check current hardware status:
+
+<Steps>
+  <Step title="Open Device Info">
+    Settings → Device Info
+  </Step>
+  
+  <Step title="Monitor Key Metrics">
+    - Total RAM
+    - Available memory
+    - Current memory usage
+    - Battery level
+    - Storage usage
+  </Step>
+</Steps>
+
+## Expected Performance
+
+From `ARCHITECTURE.md:908-926`:
+
+### Text Generation
+
+**Flagship devices (Snapdragon 8 Gen 2+):**
+- CPU: 15-30 tok/s (4-8 threads)
+- GPU (OpenCL): 20-40 tok/s (experimental, stability varies)
+- TTFT: 0.5-2s depending on context length
+
+**Mid-range devices (Snapdragon 7 series):**
+- CPU: 5-15 tok/s
+- TTFT: 1-3s
+
+**Factors affecting speed:**
+- Model size (larger = slower)
+- Quantization (lower bits = faster)
+- Context length (more tokens = slower)
+- Thread count (4-8 threads optimal)
+- GPU layers (more = faster if stable)
+
+### Vision Inference
+
+**SmolVLM 500M:**
+- Flagship: ~7s per image
+- Mid-range: ~15s per image
+
+**SmolVLM 2.2B:**
+- Flagship: ~10-15s per image
+- Mid-range: ~25-35s per image
+
+## Troubleshooting
+
+### App Crashes During Inference
+
+1. **Reduce GPU layers to 0** (disable GPU offloading)
+2. **Lower context length** to 2048
+3. **Switch to smaller model** or lower quantization
+4. **Reduce batch size** to 256
+5. **Use q4_0 KV cache** type
+
+### Slow Inference Speed
+
+1. **Increase CPU threads** to 6 or 8
+2. **Enable flash attention**
+3. **Increase batch size** to 512
+4. **Test GPU offloading** (if stable on your device)
+5. **Switch to lower quantization** (Q4_K_M instead of Q6_K)
+
+### High Memory Usage
+
+1. **Reduce context length**
+2. **Switch to q4_0 KV cache type**
+3. **Use smaller model**
+4. **Clear conversation history** (Settings → Clear All Conversations)
+
+### Thermal Throttling
+
+1. **Reduce CPU threads** to 4
+2. **Disable GPU offloading**
+3. **Use smaller batch size**
+4. **Let device cool down** between long generations

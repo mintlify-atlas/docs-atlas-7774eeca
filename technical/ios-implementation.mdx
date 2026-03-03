@@ -1,0 +1,527 @@
+---
+title: iOS Implementation
+description: Native iOS modules, Core ML integration, and hardware acceleration for Off Grid
+---
+
+## Overview
+
+Off Grid's iOS implementation uses Swift native modules bridged to React Native via Objective-C. The platform leverages Apple's Neural Engine (ANE) for image generation, Metal GPU for LLM inference, and native iOS frameworks (PDFKit, URLSession) for document processing and downloads.
+
+## Native Modules
+
+### CoreMLDiffusionModule
+
+Manages Stable Diffusion inference on iOS using Apple's ml-stable-diffusion pipeline with Neural Engine acceleration.
+
+**File:** `ios/CoreMLDiffusionModule.swift`
+
+**Architecture:**
+- Uses Apple's `StableDiffusionPipeline` (SD 1.5/2.1) or `StableDiffusionXLPipeline` (SDXL)
+- Both pipelines conform to `StableDiffusionPipelineProtocol`
+- Automatic SDXL detection via `TextEncoder2.mlmodelc` presence
+- Serial dispatch queue (`ai.offgridmobile.coreml.diffusion`) for thread safety
+- Mirrors Android `LocalDreamModule` interface for cross-platform abstraction
+
+**Pipeline Selection:**
+
+```swift
+// CoreMLDiffusionModule.swift:36-40
+private func isXLModel(at url: URL) -> Bool {
+    let te2 = url.appendingPathComponent("TextEncoder2.mlmodelc")
+    return FileManager.default.fileExists(atPath: te2.path)
+}
+```
+
+SDXL models contain `TextEncoder2.mlmodelc` (second text encoder), while SD 1.5/2.1 have only `TextEncoder.mlmodelc`.
+
+**Model Loading:**
+
+<Tabs>
+  <Tab title="SD 1.5/2.1">
+    ```swift
+    // CoreMLDiffusionModule.swift:78-84
+    pipe = try StableDiffusionPipeline(
+        resourcesAt: url,
+        controlNet: [],
+        configuration: config,
+        reduceMemory: true
+    )
+    
+    try pipe.loadResources()
+    ```
+    
+    Standard pipeline for SD 1.5 and 2.1 models. Uses single text encoder with `last_hidden_state` output.
+  </Tab>
+  
+  <Tab title="SDXL">
+    ```swift
+    // CoreMLDiffusionModule.swift:69-76
+    pipe = try StableDiffusionXLPipeline(
+        resourcesAt: url,
+        configuration: config,
+        reduceMemory: true
+    )
+    
+    try pipe.loadResources()
+    ```
+    
+    XL pipeline uses `TextEncoderXL` which outputs `hidden_embeds` instead of `last_hidden_state`. Attempting to load SDXL with standard pipeline causes runtime errors.
+  </Tab>
+</Tabs>
+
+**Compute Configuration:**
+
+```swift
+// CoreMLDiffusionModule.swift:64-65
+let config = MLModelConfiguration()
+config.computeUnits = .cpuAndNeuralEngine
+```
+
+Core ML automatically dispatches ops to ANE (Neural Engine) or CPU based on op compatibility. Most SD ops (convolutions, matrix multiplies) run on ANE.
+
+**Image Generation Flow:**
+
+```swift
+// CoreMLDiffusionModule.swift:151-169
+var pipelineConfig = PipelineConfiguration(prompt: prompt)
+pipelineConfig.negativePrompt = negativePrompt
+pipelineConfig.stepCount = steps
+pipelineConfig.guidanceScale = Float(guidanceScale)
+pipelineConfig.seed = seed
+
+let images = try pipe.generateImages(configuration: pipelineConfig) { progress in
+    if self.cancelRequested { return false }
+
+    let progressValue = Double(progress.step) / Double(progress.stepCount)
+    self.sendEvent(withName: "LocalDreamProgress", body: [
+        "step": progress.step,
+        "totalSteps": progress.stepCount,
+        "progress": progressValue
+    ])
+
+    return true // continue generation
+}
+```
+
+**Progress Callbacks:**
+
+Pipeline invokes callback after each denoising step. Returning `false` cancels generation.
+
+**Image Persistence:**
+
+```swift
+// CoreMLDiffusionModule.swift:182-196
+let imageId = UUID().uuidString
+guard let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+    reject("ERR_NO_DOCS_DIR", "Could not locate documents directory", nil)
+    return
+}
+let generatedDir = docsDir.appendingPathComponent("generated_images")
+try FileManager.default.createDirectory(at: generatedDir, withIntermediateDirectories: true)
+
+let imagePath = generatedDir.appendingPathComponent("\(imageId).png")
+let uiImage = UIImage(cgImage: cgImage)
+guard let pngData = uiImage.pngData() else {
+    reject("ERR_ENCODE", "Failed to encode image as PNG", nil)
+    return
+}
+try pngData.write(to: imagePath)
+```
+
+Images saved to `Documents/generated_images/` as PNG.
+
+**Thread Safety:**
+
+```swift
+// CoreMLDiffusionModule.swift:23
+private let pipelineQueue = DispatchQueue(label: "ai.offgridmobile.coreml.diffusion", qos: .userInitiated)
+
+// All pipeline operations run on serial queue
+pipelineQueue.async { [weak self] in
+    // Model loading, generation, etc.
+}
+```
+
+Serial queue prevents concurrent pipeline access (Core ML pipelines are not thread-safe).
+
+### PDFExtractorModule
+
+Extracts text from PDF files using Apple's PDFKit framework.
+
+**File:** `ios/OffgridMobile/PDFExtractor/PDFExtractorModule.swift`
+
+**Implementation:**
+
+```swift
+@objc
+func extractText(_ filePath: String, maxChars: Double, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+    DispatchQueue.global(qos: .userInitiated).async {
+        guard let url = URL(string: filePath) ?? URL(fileURLWithPath: filePath) as URL?,
+              let document = PDFDocument(url: url) else {
+            reject("PDF_ERROR", "Could not open PDF file", nil)
+            return
+        }
+
+        let limit = Int(maxChars)
+        var fullText = ""
+        for pageIndex in 0..<document.pageCount {
+            if let page = document.page(at: pageIndex), let pageText = page.string {
+                fullText += pageText
+                if pageIndex < document.pageCount - 1 {
+                    fullText += "\n\n"
+                }
+            }
+
+            if fullText.count >= limit {
+                fullText = String(fullText.prefix(limit))
+                fullText += "\n\n... [Extracted \(pageIndex + 1) of \(document.pageCount) pages]"
+                break
+            }
+        }
+
+        resolve(fullText)
+    }
+}
+```
+
+**PDFKit Advantages:**
+- Native iOS framework (no third-party dependencies)
+- Handles encrypted/password-protected PDFs
+- Preserves text layout and reading order
+- Automatic page boundary detection
+
+**Character Limit:**
+
+Extraction stops at `maxChars` (default 50,000) to prevent overwhelming the LLM context window.
+
+## Core ML Stable Diffusion Pipeline
+
+### Pipeline Architecture
+
+```
+Prompt Text
+  ↓
+CLIP Tokenizer → Token IDs (77 tokens max)
+  ↓
+Text Encoder (Core ML) → Text Embeddings [1, 77, 768]
+  ↓
+┌─────────────────────────────────────────┐
+│  Scheduler (DPM-Solver++ Multistep)     │
+│    ↓                                    │
+│  UNet (Core ML, iterative denoising)    │ ← Runs on ANE
+│    ↓                                    │
+│  Latent Image [1, 4, 64, 64]            │
+└─────────────────────────────────────────┘
+  ↓
+VAE Decoder (Core ML) → RGB Image [1, 3, 512, 512]
+  ↓
+CGImage → PNG
+```
+
+### Scheduler: DPM-Solver++
+
+Apple's pipeline uses DPM-Solver++ Multistep scheduler (default) for faster convergence:
+
+- 20 steps produces high-quality results (vs. 50+ steps for Euler)
+- Better detail preservation at low step counts
+- Supports guidance scale (CFG) for prompt adherence
+
+**Configuration:**
+
+```swift
+pipelineConfig.guidanceScale = Float(7.5)  // Default CFG scale
+pipelineConfig.stepCount = 20              // Recommended for quality/speed balance
+```
+
+### Safety Checker: Disabled
+
+Apple's default pipeline includes NSFW safety checker. Off Grid disables it for:
+
+1. **Reduced latency** — No secondary Core ML model invocation
+2. **User control** — On-device generation is private; users decide content policy
+3. **Model size** — Safety checker adds ~200MB to model bundle
+
+Disabled via `reduceMemory: true` (side effect: also reduces peak memory usage).
+
+### Model Variants
+
+<Tabs>
+  <Tab title="Palettized (6-bit)">
+    **Size:** ~1GB  
+    **Precision:** 6-bit quantized weights  
+    **Performance:** ~15-25s on A17 Pro/M-series (2x slower than fp16 due to dequantization)  
+    **Use case:** Memory-constrained devices (iPhone 12, iPad Air 5)
+    
+    Models:
+    - SD 1.5 Palettized
+    - SD 2.1 Palettized
+    - SDXL iOS (~2GB, 4-bit mixed-bit palettization)
+  </Tab>
+  
+  <Tab title="Full Precision (fp16)">
+    **Size:** ~4GB  
+    **Precision:** 16-bit floating point  
+    **Performance:** ~8-15s on A17 Pro/M-series (fastest on ANE)  
+    **Use case:** Flagship devices with 6GB+ RAM
+    
+    Models:
+    - SD 1.5 Full
+    - SD 2.1 Base Full
+  </Tab>
+</Tabs>
+
+**Model Source:**
+
+All models from Apple's official HuggingFace repos:
+- `apple/coreml-stable-diffusion-v1-5`
+- `apple/coreml-stable-diffusion-2-1-base`
+- `apple/coreml-stable-diffusion-xl-base`
+
+Pre-compiled `.mlmodelc` bundles (Core ML compiled model format).
+
+## Hardware Acceleration
+
+### Neural Engine (ANE)
+
+Apple's dedicated AI accelerator, available on A11+ and M-series chips.
+
+**Capabilities:**
+- 16 TOPS (A17 Pro), 18 TOPS (A18 Pro), 38 TOPS (M4)
+- Optimized for convolutions, matrix multiplies, activations
+- Low power consumption (vs. GPU)
+- Automatic op dispatch via Core ML
+
+**Core ML Compute Units:**
+
+```swift
+config.computeUnits = .cpuAndNeuralEngine
+```
+
+| Compute Unit | Ops Executed | Power | Performance |
+|---|---|---|---|
+| `.all` | ANE → GPU → CPU fallback | High | Fastest (if GPU-compatible) |
+| `.cpuAndNeuralEngine` | ANE → CPU fallback | Low | Recommended for mobile |
+| `.cpuAndGPU` | GPU → CPU fallback | Medium | Avoid (Metal allocations can crash on ≤4GB devices) |
+
+**ANE Optimization:**
+
+Core ML automatically converts fp16 ops to ANE's native precision (8-bit for activations, 16-bit for weights). Palettized models dequantize on-the-fly.
+
+### Metal GPU (LLM Inference)
+
+Llama.cpp uses Metal Performance Shaders (MPS) for GPU-accelerated LLM inference via `llama.rn`.
+
+**Configuration:**
+- User sets GPU layers (0-99) in model settings
+- Metal backend offloads transformer layers to GPU
+- Automatic fallback to CPU if Metal initialization fails
+
+**Performance:**
+- A17 Pro / M-series: 25-50 tok/s with Metal
+- CPU-only: 10-20 tok/s (ARM NEON)
+
+**Memory Safety:**
+
+```typescript
+// src/services/llmHelpers.ts
+function getGpuLayersForDevice(totalMemoryBytes: number, requestedLayers: number): number {
+  if (totalMemoryBytes <= 4 * 1024 * 1024 * 1024) {
+    // ≤4GB devices (iPhone XS, iPhone 8): disable Metal
+    return 0;
+  }
+  return requestedLayers;
+}
+```
+
+Metal buffer allocation can call `abort()` on low-RAM devices (≤4GB), killing the app before JavaScript catches the error. GPU layers forced to 0 on these devices.
+
+**CLIP GPU Acceleration:**
+
+```swift
+// Vision model multimodal inference
+if (totalMemoryBytes > 4GB) {
+  useGpuForClip = true  // Metal-accelerated CLIP image encoding
+} else {
+  useGpuForClip = false // CPU-only to prevent abort()
+}
+```
+
+Same protection for CLIP warmup during vision model initialization.
+
+## Build Configuration
+
+### Xcode Project
+
+**Minimum Deployment Target:** iOS 14.0
+
+**Required Frameworks:**
+- `CoreML.framework` — Core ML inference engine
+- `PDFKit.framework` — PDF text extraction
+- `Foundation.framework` — File I/O, networking
+- `UIKit.framework` — Image encoding
+
+**Swift Package Dependencies:**
+
+```swift
+// Package.swift
+.package(url: "https://github.com/apple/ml-stable-diffusion", from: "1.0.0")
+```
+
+Apple's ml-stable-diffusion library provides `StableDiffusionPipeline` and `StableDiffusionXLPipeline`.
+
+### Bridging Headers
+
+**Objective-C Bridge Files:**
+
+- `ios/CoreMLDiffusionModule.m`
+- `ios/OffgridMobile/PDFExtractor/PDFExtractorModule.m`
+
+Expose Swift modules to React Native bridge:
+
+```objc
+// CoreMLDiffusionModule.m
+#import <React/RCTBridgeModule.h>
+#import <React/RCTEventEmitter.h>
+
+@interface RCT_EXTERN_MODULE(CoreMLDiffusionModule, RCTEventEmitter)
+
+RCT_EXTERN_METHOD(loadModel:(NSDictionary *)params
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(generateImage:(NSDictionary *)params
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+// ... other methods
+
+@end
+```
+
+### Code Signing
+
+**Capabilities Required:**
+- App Sandbox (optional for Mac Catalyst)
+- File Access (Documents folder)
+
+**Entitlements:**
+
+```xml
+<!-- OffgridMobile.entitlements -->
+<key>com.apple.security.app-sandbox</key>
+<true/>
+<key>com.apple.security.files.user-selected.read-write</key>
+<true/>
+```
+
+## Performance Tuning
+
+### Image Generation
+
+**Step Count:**
+
+| Steps | Quality | Time (A17 Pro) | Use Case |
+|---|---|---|---|
+| 10 | Low | ~5s | Quick previews |
+| 20 | Good | ~8-12s | Recommended default |
+| 30 | Excellent | ~15-20s | High quality |
+| 50 | Diminishing returns | ~30s+ | Professional |
+
+**Guidance Scale (CFG):**
+
+- `1.0` — Ignores prompt, random images
+- `7.5` — Default, balanced prompt adherence
+- `15.0` — High adherence, may oversaturate
+
+**Resolution:**
+
+SD 1.5/2.1 trained on 512×512. SDXL trained on 1024×1024 (downscaled to 768×768 for mobile).
+
+### Memory Management
+
+**Pipeline Unloading:**
+
+```swift
+@objc func unloadModel(_ resolve: @escaping RCTPromiseResolveBlock,
+                       rejecter reject: @escaping RCTPromiseRejectBlock) {
+    pipelineQueue.async { [weak self] in
+        self?.pipeline = nil  // Releases Core ML resources
+        self?.loadedModelPath = nil
+        resolve(true)
+    }
+}
+```
+
+Core ML releases GPU/ANE memory when pipeline deallocates. Unload before switching models to prevent OOM.
+
+**Reduce Memory Flag:**
+
+```swift
+reduceMemory: true
+```
+
+Enables:
+1. Pipelined UNet execution (processes latents in chunks)
+2. Safety checker disabled (saves ~200MB)
+3. Aggressive CoreML cache eviction
+
+Trade-off: ~10% slower generation, but prevents crashes on 4GB devices.
+
+## Downloads (URLSession)
+
+iOS uses `react-native-fs` (wraps `URLSession`) for background downloads instead of Android's native DownloadManager.
+
+**Background Transfer:**
+
+```swift
+let config = URLSessionConfiguration.background(withIdentifier: "ai.offgridmobile.background")
+let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
+```
+
+Downloads continue when app is backgrounded (iOS allows 30s of background execution, then suspends until download completes).
+
+**Progress Tracking:**
+
+URLSession delegate methods emit progress events:
+
+```swift
+func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
+                didWriteData bytesWritten: Int64, totalBytesWritten: Int64,
+                totalBytesExpectedToWrite: Int64) {
+    let progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
+    // Emit to React Native
+}
+```
+
+## Debugging
+
+### Core ML Logs
+
+```bash
+# Enable Core ML logging
+defaults write com.apple.CoreML MLModelLogging -bool YES
+
+# View logs
+log stream --predicate 'subsystem == "com.apple.coreml"' --level debug
+```
+
+### ANE Performance Profiling
+
+**Xcode Instruments:**
+1. Profile → Metal System Trace
+2. Enable "Core ML" track
+3. Run image generation
+4. Inspect ANE vs. CPU vs. GPU op distribution
+
+**Expected ANE Utilization:**
+- UNet: 95%+ on ANE (convolutions)
+- VAE Decoder: 80%+ on ANE
+- Text Encoder: 50-70% on ANE (some ops fall back to CPU)
+
+## References
+
+- **Apple ml-stable-diffusion:** `https://github.com/apple/ml-stable-diffusion`
+- **Core ML Documentation:** `https://developer.apple.com/documentation/coreml`
+- **PDFKit Guide:** `https://developer.apple.com/documentation/pdfkit`
+- **Metal Performance Shaders:** `https://developer.apple.com/documentation/metalperformanceshaders`
+- **llama.cpp Metal:** `https://github.com/ggerganov/llama.cpp/blob/master/docs/backend/Metal.md`

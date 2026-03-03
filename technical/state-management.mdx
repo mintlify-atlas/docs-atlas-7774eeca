@@ -1,0 +1,598 @@
+---
+title: 'State Management'
+description: 'Zustand stores, persistence, and service-store synchronization'
+---
+
+## State Architecture
+
+Off Grid uses **Zustand** for state management with **AsyncStorage** persistence. State is split across five stores, each with a single responsibility.
+
+## Store Overview
+
+| Store | Purpose | Persistence |
+|-------|---------|-------------|
+| **appStore** | Models, settings, hardware info, gallery | ✅ Yes |
+| **chatStore** | Conversations, messages, streaming state | ✅ Partial (conversations only) |
+| **projectStore** | Custom system prompts (projects) | ✅ Yes |
+| **authStore** | Passphrase lock state | ✅ Yes |
+| **whisperStore** | Whisper model selection | ✅ Yes |
+
+---
+
+## appStore
+
+**Path:** src/stores/appStore.ts:122
+
+**Responsibilities:**
+- Downloaded models (text, image, Whisper)
+- Active model IDs
+- Settings (temperature, context length, GPU config, image gen params)
+- Device hardware info (RAM, CPU)
+- Gallery (generated images metadata)
+- Background generation state (progress, status, preview path)
+
+### Schema
+
+<CodeGroup>
+```typescript State shape
+interface AppState {
+  // Theme
+  themeMode: 'system' | 'light' | 'dark';
+
+  // Onboarding
+  hasCompletedOnboarding: boolean;
+  onboardingChecklist: OnboardingChecklist;
+  checklistDismissed: boolean;
+
+  // Device info
+  deviceInfo: DeviceInfo | null;
+  modelRecommendation: ModelRecommendation | null;
+
+  // Text models
+  downloadedModels: DownloadedModel[];
+  activeModelId: string | null;
+  modelMaxContext: number | null;
+
+  // Image models
+  downloadedImageModels: ONNXImageModel[];
+  activeImageModelId: string | null;
+
+  // Download tracking
+  downloadProgress: Record<string, DownloadProgressInfo>;
+  activeBackgroundDownloads: Record<number, PersistedDownloadInfo>;
+
+  // Settings
+  settings: AppSettings;
+
+  // Image generation state
+  isGeneratingImage: boolean;
+  imageGenerationProgress: { step: number; totalSteps: number } | null;
+  imageGenerationStatus: string | null;
+  imagePreviewPath: string | null;
+
+  // Gallery
+  generatedImages: GeneratedImage[];
+}
+```
+
+```typescript Settings schema
+type AppSettings = {
+  // Text generation
+  systemPrompt: string;
+  temperature: number;
+  maxTokens: number;
+  topP: number;
+  repeatPenalty: number;
+  contextLength: number;
+  nThreads: number;
+  nBatch: number;
+
+  // GPU acceleration
+  enableGpu: boolean;
+  gpuLayers: number;
+  flashAttn: boolean;
+  cacheType: 'f16' | 'q8_0' | 'q4_0';
+
+  // Image generation
+  imageGenerationMode: 'off' | 'auto' | 'manual';
+  autoDetectMethod: 'pattern' | 'llm';
+  imageSteps: number;
+  imageGuidanceScale: number;
+  imageThreads: number;
+  imageWidth: number;
+  imageHeight: number;
+  enhanceImagePrompts: boolean;
+
+  // Tool calling
+  enabledTools: string[];
+
+  // UI
+  showGenerationDetails: boolean;
+};
+```
+</CodeGroup>
+
+### Key Actions
+
+**Model Management:**
+```typescript
+addDownloadedModel(model: DownloadedModel);
+removeDownloadedModel(modelId: string);
+setActiveModelId(modelId: string | null);
+```
+
+**Settings:**
+```typescript
+updateSettings(settings: Partial<AppSettings>);
+resetSettings();
+```
+
+**Gallery:**
+```typescript
+addGeneratedImage(image: GeneratedImage);
+removeGeneratedImage(imageId: string);
+removeImagesByConversationId(conversationId: string);
+```
+
+### Persistence Strategy
+
+<CodeGroup>
+```typescript src/stores/appStore.ts:281
+export const useAppStore = create<AppState>()(
+  persist(
+    (set, get) => ({
+      // ... state and actions
+    }),
+    {
+      name: 'local-llm-app-storage',
+      storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => ({
+        themeMode: state.themeMode,
+        hasCompletedOnboarding: state.hasCompletedOnboarding,
+        activeModelId: state.activeModelId,
+        settings: state.settings,
+        activeImageModelId: state.activeImageModelId,
+        generatedImages: state.generatedImages,
+        // ... other persisted fields
+      }),
+    }
+  )
+);
+```
+</CodeGroup>
+
+**What is NOT persisted:**
+- `downloadProgress` (ephemeral download state)
+- `deviceInfo` (recalculated on app start)
+- `isGeneratingImage`, `imageGenerationProgress`, `imageGenerationStatus` (runtime state)
+
+---
+
+## chatStore
+
+**Path:** src/stores/chatStore.ts:48
+
+**Responsibilities:**
+- Conversations (title, messages, metadata)
+- Streaming state (current streaming message, thinking indicator)
+- Message operations (add, update, delete)
+
+### Schema
+
+<CodeGroup>
+```typescript State shape
+interface ChatState {
+  // Conversations
+  conversations: Conversation[];
+  activeConversationId: string | null;
+
+  // Streaming state (NOT persisted)
+  streamingMessage: string;
+  streamingForConversationId: string | null;
+  isStreaming: boolean;
+  isThinking: boolean;
+}
+```
+
+```typescript Conversation schema
+interface Conversation {
+  id: string;
+  title: string;
+  modelId: string;
+  messages: Message[];
+  createdAt: string;
+  updatedAt: string;
+  projectId?: string; // Optional custom system prompt
+}
+```
+
+```typescript Message schema
+interface Message {
+  id: string;
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+  timestamp: number;
+  attachments?: MediaAttachment[];
+  generationTimeMs?: number;
+  generationMeta?: GenerationMeta;
+  isThinking?: boolean; // For assistant messages
+}
+```
+</CodeGroup>
+
+### Key Actions
+
+**Conversation Management:**
+```typescript
+createConversation(modelId: string, title?: string, projectId?: string): string;
+deleteConversation(conversationId: string);
+setActiveConversation(conversationId: string | null);
+setConversationProject(conversationId: string, projectId: string | null);
+```
+
+**Message Operations:**
+```typescript
+addMessage(conversationId: string, message: Omit<Message, 'id' | 'timestamp'>): Message;
+updateMessageContent(conversationId: string, messageId: string, content: string);
+deleteMessage(conversationId: string, messageId: string);
+deleteMessagesAfter(conversationId: string, messageId: string); // Branch from message
+```
+
+**Streaming:**
+```typescript
+startStreaming(conversationId: string);
+appendToStreamingMessage(token: string);
+finalizeStreamingMessage(conversationId: string, generationTimeMs?: number, meta?: GenerationMeta);
+clearStreamingMessage();
+```
+
+### Persistence Strategy
+
+<CodeGroup>
+```typescript src/stores/chatStore.ts:275
+export const useChatStore = create<ChatState>()(
+  persist(
+    (set, get) => ({
+      // ... state and actions
+    }),
+    {
+      name: 'local-llm-chat-storage',
+      storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => ({
+        conversations: state.conversations,
+        activeConversationId: state.activeConversationId,
+        // Streaming state NOT persisted (transient)
+      }),
+    }
+  )
+);
+```
+</CodeGroup>
+
+**Streaming State is NOT Persisted:**
+
+Rationale: If the app crashes mid-generation, the partial streaming message is lost. On restart, the conversation shows the last finalized message.
+
+**Conversation Title Auto-Generation:**
+
+<CodeGroup>
+```typescript src/stores/chatStore.ts:111
+addMessage: (conversationId, messageData) => {
+  const message: Message = {
+    id: generateId(),
+    ...messageData,
+    timestamp: Date.now(),
+  };
+
+  set((state) => ({
+    conversations: state.conversations.map((conv) =>
+      conv.id === conversationId
+        ? {
+            ...conv,
+            messages: [...conv.messages, message],
+            updatedAt: new Date().toISOString(),
+            // Update title from first user message if still default
+            title: conv.title === 'New Conversation' && messageData.role === 'user'
+              ? messageData.content.slice(0, 50) + (messageData.content.length > 50 ? '...' : '')
+              : conv.title,
+          }
+        : conv
+    ),
+  }));
+
+  return message;
+}
+```
+</CodeGroup>
+
+---
+
+## projectStore
+
+**Path:** src/stores/projectStore.ts
+
+**Responsibilities:**
+- Custom system prompts (called "projects")
+- Active project selection
+
+Projects allow users to define reusable system prompts (e.g., "Python Tutor", "Creative Writer") that apply to conversations.
+
+### Schema
+
+```typescript
+interface Project {
+  id: string;
+  name: string;
+  systemPrompt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface ProjectState {
+  projects: Project[];
+  activeProjectId: string | null;
+}
+```
+
+### Key Actions
+
+```typescript
+createProject(name: string, systemPrompt: string): Project;
+updateProject(id: string, updates: Partial<Project>);
+deleteProject(id: string);
+setActiveProject(id: string | null);
+```
+
+---
+
+## authStore
+
+**Path:** src/stores/authStore.ts
+
+**Responsibilities:**
+- Passphrase lock state
+- Authentication status
+
+### Schema
+
+```typescript
+interface AuthState {
+  isLocked: boolean;
+  hasPassphrase: boolean;
+  lockTimeout: number; // seconds
+}
+```
+
+---
+
+## whisperStore
+
+**Path:** src/stores/whisperStore.ts
+
+**Responsibilities:**
+- Whisper model selection (Tiny, Base, Small)
+- Transcription configuration
+
+### Schema
+
+```typescript
+interface WhisperState {
+  selectedModel: 'tiny' | 'base' | 'small';
+  autoDownload: boolean;
+}
+```
+
+---
+
+## Service-Store Synchronization
+
+Services update stores to maintain UI reactivity. The pattern is **unidirectional**: services write to stores, UI components read from stores.
+
+### Pattern: Service Updates Store
+
+<CodeGroup>
+```typescript src/services/imageGenerationService.ts:137
+class ImageGenerationService {
+  private state: ImageGenerationState = { ... };
+
+  private updateState(partial: Partial<ImageGenerationState>): void {
+    // 1. Update service's internal state
+    this.state = { ...this.state, ...partial };
+
+    // 2. Notify service listeners (other services, background tasks)
+    this.notifyListeners();
+
+    // 3. Sync specific fields to appStore for UI reactivity
+    const appStore = useAppStore.getState();
+    if ('isGenerating' in partial) {
+      appStore.setIsGeneratingImage(this.state.isGenerating);
+    }
+    if ('progress' in partial) {
+      appStore.setImageGenerationProgress(this.state.progress);
+    }
+    if ('status' in partial) {
+      appStore.setImageGenerationStatus(this.state.status);
+    }
+    if ('previewPath' in partial) {
+      appStore.setImagePreviewPath(this.state.previewPath);
+    }
+  }
+}
+```
+
+```typescript UI reads from store
+import { useAppStore } from '../stores';
+
+function ChatScreen() {
+  const isGeneratingImage = useAppStore(state => state.isGeneratingImage);
+  const imageProgress = useAppStore(state => state.imageGenerationProgress);
+  const imageStatus = useAppStore(state => state.imageGenerationStatus);
+
+  // Re-renders automatically when service updates store
+}
+```
+</CodeGroup>
+
+### Why Both Service State AND Store State?
+
+**Service state:**
+- Maintains generation across component unmounts
+- Holds complex objects not suitable for AsyncStorage persistence
+- Allows services to communicate with each other
+
+**Store state:**
+- Triggers React re-renders via Zustand subscriptions
+- Persists critical fields to AsyncStorage
+- Provides global access to UI components
+
+### Data Flow Diagram
+
+```
+User Action
+    ↓
+UI Component
+    ↓
+Service (singleton)
+    ↓
+  ├─→ Native Module (inference)
+  │       ↓
+  │   Callbacks (progress, tokens)
+  │       ↓
+  └─→ Service.updateState()
+          ↓
+      ├─→ Notify service listeners
+      └─→ Update Zustand store
+              ↓
+          UI re-renders
+```
+
+---
+
+## Persistence Implementation
+
+### AsyncStorage Adapter
+
+Zustand's `persist` middleware uses `createJSONStorage(() => AsyncStorage)` to automatically save/restore state.
+
+<CodeGroup>
+```typescript Example: appStore persistence
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+
+export const useAppStore = create<AppState>()(
+  persist(
+    (set, get) => ({
+      // State and actions
+      settings: DEFAULT_SETTINGS,
+      updateSettings: (newSettings) => set((state) => ({
+        settings: { ...state.settings, ...newSettings },
+      })),
+    }),
+    {
+      name: 'local-llm-app-storage', // AsyncStorage key
+      storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => ({
+        settings: state.settings, // Only persist settings
+      }),
+    }
+  )
+);
+```
+</CodeGroup>
+
+**Persistence Keys:**
+
+| Store | AsyncStorage Key |
+|-------|------------------|
+| appStore | `local-llm-app-storage` |
+| chatStore | `local-llm-chat-storage` |
+| projectStore | `project-storage` |
+| authStore | `auth-storage` |
+| whisperStore | `whisper-storage` |
+
+### Migration Example
+
+When adding new fields or changing defaults, use the `merge` option:
+
+<CodeGroup>
+```typescript src/stores/appStore.ts:283
+persist(
+  (set, get) => ({ ... }),
+  {
+    name: 'local-llm-app-storage',
+    storage: createJSONStorage(() => AsyncStorage),
+    merge: (persistedState: any, currentState) => {
+      const merged = { ...currentState, ...persistedState };
+
+      // Migrate old modelLoadingStrategy from 'memory' → 'performance'
+      if (persistedState?.settings?.modelLoadingStrategy === 'memory') {
+        merged.settings = {
+          ...merged.settings,
+          modelLoadingStrategy: 'performance'
+        };
+      }
+
+      // Migrate: add cacheType if missing, derive from old flashAttn
+      if (persistedState?.settings && !persistedState.settings.cacheType) {
+        const oldFlashAttn = persistedState.settings.flashAttn;
+        const derivedCacheType = oldFlashAttn ? 'q8_0' : 'f16';
+        merged.settings = {
+          ...merged.settings,
+          cacheType: derivedCacheType,
+          flashAttn: true
+        };
+      }
+
+      return merged as AppState;
+    },
+  }
+)
+```
+</CodeGroup>
+
+---
+
+## Unidirectional Data Flow
+
+**Rule:** Services write to stores. UI reads from stores. UI never writes to stores directly (only via service methods).
+
+**Example: Load Model Flow**
+
+```
+1. User taps "Load Model" button
+2. UI calls: activeModelService.loadTextModel('qwen-0.6b')
+3. activeModelService:
+   - Checks memory
+   - Calls llmService.loadModel()
+   - Updates loadedTextModelId
+   - Calls useAppStore.getState().setActiveModelId('qwen-0.6b')
+4. appStore updates activeModelId
+5. UI re-renders (Zustand subscription)
+```
+
+**Anti-Pattern (don't do this):**
+
+```typescript
+// ❌ BAD: UI writes to store directly
+function ModelCard({ model }) {
+  const setActiveModelId = useAppStore(state => state.setActiveModelId);
+
+  const handleLoad = () => {
+    setActiveModelId(model.id); // UI directly mutates store
+    // Model not actually loaded in native!
+  };
+}
+```
+
+**Correct Pattern:**
+
+```typescript
+// ✅ GOOD: UI calls service, service updates store
+function ModelCard({ model }) {
+  const handleLoad = async () => {
+    await activeModelService.loadTextModel(model.id);
+    // Service handles: memory check, native load, store update
+  };
+}
+```

@@ -1,0 +1,713 @@
+---
+title: 'Native Modules'
+description: 'React Native bridges to C++, Kotlin, and Swift inference engines'
+---
+
+## Overview
+
+Off Grid uses native modules to bridge React Native (JavaScript) to high-performance C++ and platform-specific inference engines.
+
+| Module | Platform | Language | Purpose |
+|--------|----------|----------|--------|
+| llama.rn | Android + iOS | C++ | Text + vision LLM inference (llama.cpp) |
+| whisper.rn | Android + iOS | C++ | Speech-to-text transcription (whisper.cpp) |
+| LocalDreamModule | Android | Kotlin + C++ | Stable Diffusion (MNN/QNN backends) |
+| CoreMLDiffusionModule | iOS | Swift | Stable Diffusion (Core ML + ANE) |
+| PDFExtractorModule | Android | Kotlin | PDF text extraction (PdfiumAndroid) |
+| PDFExtractorModule | iOS | Swift | PDF text extraction (PDFKit) |
+| DownloadManagerModule | Android | Kotlin | Background downloads (DownloadManager) |
+
+---
+
+## llama.rn (Text + Vision Inference)
+
+**Upstream:** [github.com/mybigday/llama.rn](https://github.com/mybigday/llama.rn)  
+**Wraps:** llama.cpp (Georgi Gerganov's GGUF inference engine)
+
+### Platform Support
+
+| Feature | Android | iOS |
+|---------|---------|-----|
+| Text Generation | ✅ llama.cpp (OpenCL GPU) | ✅ llama.cpp (Metal GPU) |
+| Vision (multimodal) | ✅ mmproj CLIP encoder | ✅ mmproj CLIP encoder |
+| Tool Calling | ✅ Model-dependent | ✅ Model-dependent |
+| Flash Attention | ✅ Auto-disabled with GPU | ✅ Always available |
+| KV Cache Quantization | ✅ f16/q8_0/q4_0 | ✅ f16/q8_0/q4_0 |
+
+### TypeScript API
+
+<CodeGroup>
+```typescript src/services/llm.ts:54
+import { LlamaContext } from 'llama.rn';
+
+class LLMService {
+  private context: LlamaContext | null = null;
+
+  async loadModel(modelPath: string, mmProjPath?: string): Promise<void> {
+    const { settings } = useAppStore.getState();
+
+    // Build model params
+    const params = {
+      model: modelPath,
+      use_mlock: true,
+      n_ctx: settings.contextLength,
+      n_threads: settings.nThreads,
+      n_batch: settings.nBatch,
+      n_gpu_layers: settings.enableGpu ? settings.gpuLayers : 0,
+      flash_attn: settings.flashAttn,
+      cache_type_k: settings.cacheType,
+      cache_type_v: settings.cacheType,
+    };
+
+    // Initialize context
+    this.context = await initContextWithFallback(params, settings.contextLength, params.n_gpu_layers);
+
+    // Load multimodal (vision) if mmproj provided
+    if (mmProjPath) {
+      await this.initializeMultimodal(mmProjPath);
+    }
+  }
+
+  async generateResponse(
+    messages: Message[],
+    onStream?: (token: string) => void,
+    onComplete?: (fullResponse: string) => void
+  ): Promise<string> {
+    if (!this.context) throw new Error('No model loaded');
+
+    const oaiMessages = this.convertToOAIMessages(messages);
+    let fullResponse = '';
+
+    await this.context.completion(
+      {
+        messages: oaiMessages,
+        temperature: settings.temperature,
+        top_p: settings.topP,
+        max_tokens: settings.maxTokens,
+        repeat_penalty: settings.repeatPenalty,
+      },
+      (data) => {
+        if (!data.token) return;
+        fullResponse += data.token;
+        onStream?.(data.token);
+      }
+    );
+
+    onComplete?.(fullResponse);
+    return fullResponse;
+  }
+}
+```
+</CodeGroup>
+
+### Vision Inference (Multimodal)
+
+Vision models require a **mmproj** file (multimodal projector) containing the CLIP vision encoder weights.
+
+<CodeGroup>
+```typescript src/services/llm.ts:116
+async initializeMultimodal(mmProjPath: string): Promise<boolean> {
+  if (!this.context) return false;
+
+  const devInfo = useAppStore.getState().deviceInfo;
+  const mem = devInfo?.totalMemory ?? 0;
+
+  // Disable CLIP GPU on low-RAM devices (≤4GB)
+  const useGpuForClip = Platform.OS === 'ios' && !devInfo?.isEmulator && mem > 4 * BYTES_PER_GB;
+
+  const { initialized, support } = await initMultimodal(
+    this.context,
+    mmProjPath,
+    useGpuForClip
+  );
+
+  this.multimodalInitialized = initialized;
+  this.multimodalSupport = support;
+  return initialized;
+}
+```
+
+```typescript Image attachment format (OpenAI-compatible)
+import { RNLlamaOAICompatibleMessage } from 'llama.rn';
+
+const messages: RNLlamaOAICompatibleMessage[] = [
+  {
+    role: 'user',
+    content: [
+      { type: 'text', text: 'What is in this image?' },
+      { type: 'image_url', image_url: { url: 'file:///path/to/image.jpg' } },
+    ],
+  },
+];
+
+await context.completion({ messages }, (data) => {
+  console.log(data.token);
+});
+```
+</CodeGroup>
+
+### Tool Calling Detection
+
+llama.rn introspects the model's **jinja chat template** to detect tool calling support.
+
+<CodeGroup>
+```typescript src/services/llm.ts:150
+private detectToolCallingSupport(): void {
+  if (!this.context) {
+    this.toolCallingSupported = false;
+    return;
+  }
+
+  const model = (this.context as any)?.model;
+  const jinja = model?.chatTemplates?.jinja;
+
+  this.toolCallingSupported = !!(
+    jinja?.defaultCaps?.toolCalls ||
+    jinja?.toolUse ||
+    jinja?.toolUseCaps?.toolCalls
+  );
+}
+```
+</CodeGroup>
+
+### GPU Acceleration
+
+**Android:** OpenCL (Adreno GPUs)  
+**iOS:** Metal (Apple GPUs)
+
+<Note>
+On devices with ≤4GB RAM, GPU layers are forced to 0 to prevent `abort()` crashes during Metal/OpenCL buffer allocation (see src/services/llmHelpers.ts:getGpuLayersForDevice).
+</Note>
+
+---
+
+## whisper.rn (Speech Transcription)
+
+**Upstream:** [github.com/mybigday/whisper.rn](https://github.com/mybigday/whisper.rn)  
+**Wraps:** whisper.cpp
+
+### Features
+
+- Real-time audio recording and transcription
+- Partial results (word-by-word streaming)
+- Multiple model sizes: Tiny (39MB), Base (74MB), Small (244MB)
+- No network required (100% on-device)
+
+### TypeScript API
+
+```typescript
+import { whisperContext } from 'whisper.rn';
+
+// Load model
+const ctx = await whisperContext.initContext({
+  filePath: '/path/to/ggml-tiny.bin',
+});
+
+// Transcribe audio file
+const result = await ctx.transcribe({
+  audioPath: '/path/to/audio.wav',
+  language: 'en',
+  maxLen: 1,
+  tokenTimestamps: true,
+});
+
+console.log(result.result); // "Hello, world!"
+```
+
+---
+
+## LocalDreamModule (Android Stable Diffusion)
+
+**Path:** android/app/src/main/java/ai/offgridmobile/localdream/LocalDreamModule.kt:32  
+**Wraps:** local-dream C++ library (MNN/QNN backends)
+
+### Architecture
+
+LocalDreamModule spawns a **subprocess** running an HTTP server on `localhost:18081`. The TypeScript layer sends POST requests to `/generate`, and the server responds with Server-Sent Events (SSE) for progress updates.
+
+```
+TypeScript
+    ↓ POST /generate
+HTTP Server (localhost:18081)
+    ↓
+local-dream C++ (subprocess)
+    ↓ MNN or QNN
+CPU or NPU inference
+```
+
+### Backend Selection
+
+<CodeGroup>
+```kotlin android/app/src/main/java/ai/offgridmobile/localdream/LocalDreamModule.kt:288
+@ReactMethod
+fun loadModel(params: ReadableMap, promise: Promise) {
+  val modelPath = params.getString("modelPath") ?: throw IllegalArgumentException("modelPath is required")
+  val rawModelDir = File(modelPath)
+  val requestedBackend = params.getString("backend") ?: "auto"
+
+  // Resolve model directory for CPU (MNN) and/or NPU (QNN)
+  val cpuModelDir = resolveModelDir(rawModelDir, isCpu = true)  // Looks for unet.mnn
+  val qnnModelDir = resolveModelDir(rawModelDir, isCpu = false) // Looks for unet.bin
+  val npuSupported = isNpuSupportedInternal()
+
+  val (backend, modelDir) = when (requestedBackend.lowercase()) {
+    "mnn", "cpu" -> if (cpuModelDir != null) "mnn" to cpuModelDir else null
+    "qnn", "npu" -> if (qnnModelDir != null) "qnn" to qnnModelDir else null
+    "auto" -> {
+      when {
+        qnnModelDir != null && npuSupported -> "qnn" to qnnModelDir
+        cpuModelDir != null -> "mnn" to cpuModelDir
+        qnnModelDir != null -> "qnn" to qnnModelDir
+        else -> null
+      }
+    }
+    else -> null
+  } ?: throw IllegalArgumentException("Model files not found")
+
+  // Start server with selected backend
+  tryStartServer(modelPath, modelDir, backend, isCpu = backend == "mnn")
+}
+```
+
+```kotlin NPU detection (Qualcomm SoC)
+internal fun isNpuSupportedInternal(): Boolean {
+  val soc = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+    Build.SOC_MODEL // e.g., "SM8550" (Snapdragon 8 Gen 2)
+  } else {
+    ""
+  }
+  return soc.startsWith("SM") || soc.startsWith("QCS") || soc.startsWith("QCM")
+}
+```
+</CodeGroup>
+
+### Image Generation Flow
+
+<CodeGroup>
+```kotlin Generate image (SSE stream)
+@ReactMethod
+fun generateImage(params: ReadableMap, promise: Promise) {
+  val body = JSONObject().apply {
+    put("prompt", params.getString("prompt") ?: "")
+    put("negative_prompt", params.getString("negativePrompt") ?: "")
+    put("steps", params.getInt("steps") ?: 20)
+    put("cfg", params.getDouble("guidanceScale") ?: 7.5)
+    put("seed", params.getInt("seed") ?: (Math.random() * 2147483647).toInt())
+    put("width", params.getInt("width") ?: 512)
+    put("height", params.getInt("height") ?: 512)
+    put("scheduler", "dpm")
+    put("show_diffusion_process", true)
+    put("show_diffusion_stride", params.getInt("previewInterval") ?: 2)
+  }
+
+  val url = URL("http://127.0.0.1:$SERVER_PORT/generate")
+  val connection = (url.openConnection() as HttpURLConnection).apply {
+    requestMethod = "POST"
+    doOutput = true
+    setRequestProperty("Content-Type", "application/json")
+    setRequestProperty("Accept", "text/event-stream")
+  }
+
+  // Send request
+  OutputStreamWriter(connection.outputStream).use { it.write(body.toString()) }
+
+  // Parse SSE stream
+  BufferedReader(InputStreamReader(connection.inputStream)).use { reader ->
+    var line: String?
+    while (reader.readLine().also { line = it } != null) {
+      if (line!!.startsWith("data: ")) {
+        val data = JSONObject(line!!.substring(6))
+        when (data.optString("type")) {
+          "progress" -> {
+            val step = data.getInt("step")
+            val totalSteps = data.getInt("total_steps")
+            val previewBase64 = data.optString("image", "")
+
+            // Emit progress event
+            sendEvent("LocalDreamProgress", Arguments.createMap().apply {
+              putInt("step", step)
+              putInt("totalSteps", totalSteps)
+            })
+
+            // Save preview image if present
+            if (previewBase64.isNotEmpty()) {
+              saveRgbToPng(previewBase64, width, height, previewPath)
+            }
+          }
+          "complete" -> {
+            val imageBase64 = data.getString("image")
+            saveRgbToPng(imageBase64, width, height, finalPath)
+            promise.resolve(Arguments.createMap().apply {
+              putString("imagePath", finalPath)
+            })
+          }
+        }
+      }
+    }
+  }
+}
+```
+</CodeGroup>
+
+### RGB → PNG Conversion
+
+local-dream returns images as **base64-encoded raw RGB bytes**. LocalDreamModule decodes and converts to PNG:
+
+<CodeGroup>
+```kotlin android/app/src/main/java/ai/offgridmobile/localdream/LocalDreamModule.kt:138
+internal fun saveRgbToPng(base64Rgb: String, width: Int, height: Int, outputPath: String) {
+  val rgbBytes = Base64.decode(base64Rgb, Base64.DEFAULT)
+  val expectedSize = width * height * 3
+
+  if (rgbBytes.size != expectedSize) {
+    throw IllegalArgumentException(
+      "RGB data size ${rgbBytes.size} doesn't match expected $expectedSize (${width}x${height}x3)"
+    )
+  }
+
+  val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+  val pixels = IntArray(width * height)
+
+  for (i in 0 until width * height) {
+    val idx = i * 3
+    val r = rgbBytes[idx].toInt() and 0xFF
+    val g = rgbBytes[idx + 1].toInt() and 0xFF
+    val b = rgbBytes[idx + 2].toInt() and 0xFF
+    pixels[i] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+  }
+
+  bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
+
+  File(outputPath).parentFile?.mkdirs()
+  FileOutputStream(outputPath).use { out ->
+    bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+  }
+  bitmap.recycle()
+}
+```
+</CodeGroup>
+
+---
+
+## CoreMLDiffusionModule (iOS Stable Diffusion)
+
+**Path:** ios/CoreMLDiffusionModule.swift:11  
+**Wraps:** Apple's `ml-stable-diffusion` Swift library
+
+### Features
+
+- Neural Engine (ANE) + CPU acceleration
+- Supports SD 1.5, SD 2.1, and SDXL models
+- DPM-Solver multistep scheduler
+- Palettized (6-bit) and full-precision (fp16) models
+
+### Model Detection (SD vs SDXL)
+
+SDXL models use a different text encoder (`TextEncoder2.mlmodelc`). CoreMLDiffusionModule auto-detects and loads the correct pipeline:
+
+<CodeGroup>
+```swift ios/CoreMLDiffusionModule.swift:37
+private func isXLModel(at url: URL) -> Bool {
+  let te2 = url.appendingPathComponent("TextEncoder2.mlmodelc")
+  return FileManager.default.fileExists(atPath: te2.path)
+}
+
+@objc func loadModel(_ params: NSDictionary,
+                     resolver resolve: @escaping RCTPromiseResolveBlock,
+                     rejecter reject: @escaping RCTPromiseRejectBlock) {
+  guard let modelPath = params["modelPath"] as? String else {
+    reject("ERR_INVALID_PARAMS", "modelPath is required", nil)
+    return
+  }
+
+  let url = URL(fileURLWithPath: modelPath)
+  let config = MLModelConfiguration()
+  config.computeUnits = .cpuAndNeuralEngine
+
+  let pipe: StableDiffusionPipelineProtocol
+
+  if isXLModel(at: url) {
+    pipe = try StableDiffusionXLPipeline(
+      resourcesAt: url,
+      configuration: config,
+      reduceMemory: true
+    )
+  } else {
+    pipe = try StableDiffusionPipeline(
+      resourcesAt: url,
+      controlNet: [],
+      configuration: config,
+      reduceMemory: true
+    )
+  }
+
+  try pipe.loadResources()
+  self.pipeline = pipe
+  resolve(true)
+}
+```
+</CodeGroup>
+
+### Image Generation
+
+<CodeGroup>
+```swift ios/CoreMLDiffusionModule.swift:123
+@objc func generateImage(_ params: NSDictionary,
+                         resolver resolve: @escaping RCTPromiseResolveBlock,
+                         rejecter reject: @escaping RCTPromiseRejectBlock) {
+  guard let pipe = pipeline else {
+    reject("ERR_NO_MODEL", "No model loaded", nil)
+    return
+  }
+
+  let prompt = params["prompt"] as? String ?? ""
+  let negativePrompt = params["negativePrompt"] as? String ?? ""
+  let steps = params["steps"] as? Int ?? 20
+  let guidanceScale = params["guidanceScale"] as? Double ?? 7.5
+  let seed = params["seed"] as? UInt32 ?? UInt32.random(in: 0..<UInt32.max)
+
+  var config = PipelineConfiguration(prompt: prompt)
+  config.negativePrompt = negativePrompt
+  config.stepCount = steps
+  config.guidanceScale = Float(guidanceScale)
+  config.seed = seed
+
+  let images = try pipe.generateImages(configuration: config) { progress in
+    // Emit progress event
+    self.sendEvent(withName: "LocalDreamProgress", body: [
+      "step": progress.step,
+      "totalSteps": progress.stepCount,
+      "progress": Double(progress.step) / Double(progress.stepCount)
+    ])
+    return !self.cancelRequested // Continue if not cancelled
+  }
+
+  guard let cgImage = images.compactMap({ $0 }).first else {
+    reject("ERR_NO_IMAGE", "Pipeline produced no image", nil)
+    return
+  }
+
+  // Save to documents directory
+  let imageId = UUID().uuidString
+  let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+  let generatedDir = docsDir.appendingPathComponent("generated_images")
+  try FileManager.default.createDirectory(at: generatedDir, withIntermediateDirectories: true)
+
+  let imagePath = generatedDir.appendingPathComponent("\(imageId).png")
+  let uiImage = UIImage(cgImage: cgImage)
+  let pngData = uiImage.pngData()!
+  try pngData.write(to: imagePath)
+
+  resolve([
+    "id": imageId,
+    "imagePath": imagePath.path,
+    "width": cgImage.width,
+    "height": cgImage.height,
+    "seed": seed
+  ])
+}
+```
+</CodeGroup>
+
+---
+
+## PDFExtractorModule
+
+### Android (PdfiumAndroid)
+
+**Path:** android/app/src/main/java/ai/offgridmobile/pdf/PDFExtractorModule.kt:11
+
+<CodeGroup>
+```kotlin Extract text from PDF (Android)
+@ReactMethod
+fun extractText(filePath: String, maxChars: Double, promise: Promise) {
+  Thread {
+    val file = File(filePath)
+    if (!file.exists()) {
+      promise.reject("PDF_ERROR", "File not found: $filePath")
+      return@Thread
+    }
+
+    val limit = maxChars.toInt()
+    val core = PdfiumCore(reactApplicationContext)
+    val fd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+    val doc = core.newDocument(fd)
+    val pageCount = doc.getPageCount()
+    val sb = StringBuilder()
+
+    for (i in 0 until pageCount) {
+      val page = doc.openPage(i)
+      val textPage = page.openTextPage()
+      val charCount = textPage.textPageCountChars()
+
+      if (charCount > 0) {
+        val text = textPage.textPageGetText(0, charCount)
+        if (text != null) sb.append(text).append("\n\n")
+      }
+
+      textPage.close()
+      page.close()
+
+      if (sb.length >= limit) {
+        sb.setLength(limit)
+        sb.append("\n\n... [Extracted ${i + 1} of $pageCount pages]")
+        break
+      }
+    }
+
+    doc.close()
+    fd.close()
+    promise.resolve(sb.toString())
+  }.start()
+}
+```
+</CodeGroup>
+
+### iOS (PDFKit)
+
+**Path:** ios/OffgridMobile/PDFExtractor/PDFExtractorModule.swift:4
+
+<CodeGroup>
+```swift Extract text from PDF (iOS)
+@objc
+func extractText(_ filePath: String, maxChars: Double,
+                 resolver resolve: @escaping RCTPromiseResolveBlock,
+                 rejecter reject: @escaping RCTPromiseRejectBlock) {
+  DispatchQueue.global(qos: .userInitiated).async {
+    guard let url = URL(string: filePath) ?? URL(fileURLWithPath: filePath) as URL?,
+          let document = PDFDocument(url: url) else {
+      reject("PDF_ERROR", "Could not open PDF file", nil)
+      return
+    }
+
+    let limit = Int(maxChars)
+    var fullText = ""
+
+    for pageIndex in 0..<document.pageCount {
+      if let page = document.page(at: pageIndex), let pageText = page.string {
+        fullText += pageText
+        if pageIndex < document.pageCount - 1 {
+          fullText += "\n\n"
+        }
+      }
+
+      if fullText.count >= limit {
+        fullText = String(fullText.prefix(limit))
+        fullText += "\n\n... [Extracted \(pageIndex + 1) of \(document.pageCount) pages]"
+        break
+      }
+    }
+
+    resolve(fullText)
+  }
+}
+```
+</CodeGroup>
+
+---
+
+## DownloadManagerModule (Android)
+
+**Path:** android/app/src/main/java/ai/offgridmobile/download/DownloadManagerModule.kt:17
+
+### Features
+
+- Background downloads via Android's native `DownloadManager`
+- Progress polling (500ms intervals)
+- Persistent download tracking via `SharedPreferences`
+- Automatic cleanup of completed/stale downloads
+- System notifications for download progress
+
+### Key Methods
+
+<CodeGroup>
+```kotlin Start download
+@ReactMethod
+fun startDownload(params: ReadableMap, promise: Promise) {
+  val url = params.getString("url") ?: throw IllegalArgumentException("URL is required")
+  val fileName = params.getString("fileName") ?: throw IllegalArgumentException("fileName is required")
+  val title = params.getString("title") ?: fileName
+  val modelId = params.getString("modelId") ?: ""
+
+  val request = DownloadManager.Request(Uri.parse(url))
+    .setTitle(title)
+    .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+    .setDestinationInExternalFilesDir(
+      reactApplicationContext,
+      Environment.DIRECTORY_DOWNLOADS,
+      fileName
+    )
+    .setAllowedOverMetered(true)
+    .setAllowedOverRoaming(true)
+
+  val downloadId = downloadManager.enqueue(request)
+
+  // Persist download info to SharedPreferences
+  val downloadInfo = JSONObject().apply {
+    put("downloadId", downloadId)
+    put("url", url)
+    put("fileName", fileName)
+    put("modelId", modelId)
+    put("title", title)
+    put("status", "pending")
+    put("startedAt", System.currentTimeMillis())
+  }
+  persistDownload(downloadId, downloadInfo)
+
+  promise.resolve(Arguments.createMap().apply {
+    putDouble("downloadId", downloadId.toDouble())
+    putString("fileName", fileName)
+    putString("modelId", modelId)
+  })
+}
+```
+
+```kotlin Progress polling
+private fun pollAllDownloads() {
+  val downloads = getAllPersistedDownloads()
+
+  for (i in 0 until downloads.length()) {
+    val download = downloads.getJSONObject(i)
+    val downloadId = download.getLong("downloadId")
+    val statusInfo = queryDownloadStatus(downloadId)
+    val status = statusInfo.getString("status")
+
+    when (status) {
+      "completed" -> {
+        val completedEventSent = download.optBoolean("completedEventSent", false)
+        if (!completedEventSent) {
+          sendEvent("DownloadComplete", Arguments.createMap().apply {
+            putDouble("downloadId", downloadId.toDouble())
+            putString("localUri", statusInfo.getString("localUri"))
+          })
+          updateDownloadStatus(downloadId, "completed", statusInfo.getString("localUri"))
+        }
+      }
+      "failed" -> {
+        sendEvent("DownloadError", Arguments.createMap().apply {
+          putDouble("downloadId", downloadId.toDouble())
+          putString("reason", statusInfo.getString("reason"))
+        })
+        removeDownload(downloadId)
+      }
+      "running", "pending" -> {
+        sendEvent("DownloadProgress", Arguments.createMap().apply {
+          putDouble("downloadId", downloadId.toDouble())
+          putDouble("bytesDownloaded", statusInfo.getDouble("bytesDownloaded"))
+          putDouble("totalBytes", statusInfo.getDouble("totalBytes"))
+        })
+      }
+    }
+  }
+}
+```
+</CodeGroup>
+
+**Race Condition Fix:** On slow emulators, download completion notification could arrive before React Native received the `DownloadComplete` event. Fixed by tracking `completedEventSent` separately:
+
+```kotlin
+if (status == "completed" && !completedEventSent) {
+  sendEvent("DownloadComplete", eventParams)
+  updateDownloadStatus(downloadId, "completed", localUri)
+}
+```

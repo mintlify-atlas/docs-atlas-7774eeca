@@ -1,0 +1,684 @@
+---
+title: Hardware Acceleration
+description: GPU, NPU, and Neural Engine acceleration for LLM inference and image generation
+---
+
+## Overview
+
+Off Grid leverages platform-specific hardware accelerators to achieve real-time on-device AI inference:
+
+- **Android:** OpenCL (GPU) for LLMs, Qualcomm QNN (NPU) for image generation
+- **iOS:** Metal (GPU) for LLMs, Apple Neural Engine (ANE) for image generation
+
+All acceleration is optional with automatic CPU fallback. The app detects hardware capabilities at runtime and degrades gracefully.
+
+## LLM Inference Acceleration
+
+### OpenCL GPU Offloading (Android)
+
+Llama.cpp supports GPU acceleration via OpenCL on Qualcomm Adreno GPUs.
+
+**Architecture:**
+
+```
+llama.cpp (C++)
+  ↓
+ggml OpenCL backend
+  ↓
+OpenCL Runtime
+  ↓
+Qualcomm Adreno GPU Driver
+  ↓
+Adreno GPU (e.g., Adreno 740 on Snapdragon 8 Gen 2)
+```
+
+**Layer Offloading:**
+
+<Tabs>
+  <Tab title="Configuration">
+    ```typescript
+    // User configures GPU layers in model settings
+    const modelParams = {
+      nGpuLayers: 33, // Offload first 33 transformer layers to GPU
+      contextSize: 2048,
+      nBatch: 256,
+      // ...
+    }
+
+    await llmService.initContext(modelParams);
+    ```
+    
+    llama.cpp splits the model:
+    - First `nGpuLayers` layers → GPU via OpenCL
+    - Remaining layers → CPU via ARM NEON
+  </Tab>
+  
+  <Tab title="Performance">
+    **Snapdragon 8 Gen 3 (Adreno 750):**
+    
+    | Model | CPU Only | GPU (33 layers) | Speedup |
+    |---|---|---|---|
+    | Qwen 3 0.6B Q4_K_M | 18 tok/s | 28 tok/s | 1.6x |
+    | Llama 3.2 3B Q4_K_M | 8 tok/s | 14 tok/s | 1.75x |
+    | Qwen 3 7B Q4_K_M | 3 tok/s | 6 tok/s | 2x |
+    
+    Speedup increases with model size (more compute-bound).
+  </Tab>
+  
+  <Tab title="Memory Safety">
+    ```typescript
+    // src/services/llmHelpers.ts
+    function getGpuLayersForDevice(
+      totalMemoryBytes: number,
+      requestedLayers: number
+    ): number {
+      if (totalMemoryBytes <= 4 * 1024 * 1024 * 1024) {
+        // ≤4GB devices: disable GPU to prevent abort()
+        return 0;
+      }
+      return requestedLayers;
+    }
+    ```
+    
+    OpenCL buffer allocation can call `abort()` on low-RAM devices before JavaScript catches the error. GPU layers forced to 0 on devices with ≤4GB RAM.
+  </Tab>
+</Tabs>
+
+**Compatibility Matrix:**
+
+| GPU | OpenCL Version | Status | Notes |
+|---|---|---|---|
+| Adreno 740 (8 Gen 2) | 2.0 FP | ✅ Stable | Recommended |
+| Adreno 750 (8 Gen 3) | 2.0 FP | ✅ Stable | Best performance |
+| Adreno 735 (8+ Gen 1) | 2.0 FP | ⚠️ Experimental | May crash |
+| Adreno 650 (865) | 2.0 FP | ⚠️ Experimental | Slower than CPU |
+| Mali-G710 (Exynos) | 3.0 | ❌ Unsupported | llama.cpp lacks Mali optimizations |
+
+**Known Issues:**
+
+<Warning>
+  **Crash during initialization:** Some Adreno GPUs crash when offloading >40 layers. Start with 0 GPU layers and incrementally increase by 8-10 layers while testing stability.
+</Warning>
+
+**Flash Attention Conflict:**
+
+```typescript
+// src/services/llm.ts
+if (nGpuLayers > 0 && Platform.OS === 'android') {
+  flashAttn = false; // Auto-disable flash attention
+  console.warn('Flash attention disabled: incompatible with OpenCL backend');
+}
+```
+
+llama.cpp's flash attention implementation conflicts with OpenCL backend. Attempting to use both causes SIGSEGV.
+
+### Metal GPU Acceleration (iOS)
+
+Llama.cpp uses Metal Performance Shaders (MPS) for GPU acceleration on Apple Silicon.
+
+**Architecture:**
+
+```
+llama.cpp (C++)
+  ↓
+ggml Metal backend
+  ↓
+Metal API
+  ↓
+Apple GPU (e.g., A17 Pro 6-core GPU)
+```
+
+**Layer Offloading:**
+
+<Tabs>
+  <Tab title="Configuration">
+    ```typescript
+    const modelParams = {
+      nGpuLayers: 99, // Offload all layers to GPU (recommended)
+      useMetalGpu: true,
+      contextSize: 2048,
+      // ...
+    }
+
+    await llmService.initContext(modelParams);
+    ```
+    
+    On iOS, offloading all layers (`nGpuLayers: 99`) typically provides best performance since Metal backend is stable.
+  </Tab>
+  
+  <Tab title="Performance">
+    **A17 Pro (iPhone 15 Pro):**
+    
+    | Model | CPU Only | GPU (All layers) | Speedup |
+    |---|---|---|---|
+    | Qwen 3 0.6B Q4_K_M | 12 tok/s | 32 tok/s | 2.7x |
+    | Llama 3.2 3B Q4_K_M | 5 tok/s | 18 tok/s | 3.6x |
+    | Qwen 3 7B Q4_K_M | 2 tok/s | 8 tok/s | 4x |
+    
+    **M2 (iPad Pro):**
+    
+    | Model | CPU Only | GPU (All layers) | Speedup |
+    |---|---|---|---|
+    | Qwen 3 7B Q4_K_M | 4 tok/s | 25 tok/s | 6.25x |
+    | Llama 3.1 8B Q4_K_M | 3 tok/s | 22 tok/s | 7.3x |
+    
+    M-series chips have higher GPU bandwidth and unified memory, providing better speedup.
+  </Tab>
+  
+  <Tab title="Memory Safety">
+    ```typescript
+    // src/services/llmHelpers.ts (iOS)
+    if (totalMemoryBytes <= 4 * 1024 * 1024 * 1024) {
+      // ≤4GB devices (iPhone XS, iPhone 8): disable Metal
+      return 0;
+    }
+    ```
+    
+    Same protection as Android. Metal buffer allocation can abort on ≤4GB devices.
+  </Tab>
+</Tabs>
+
+**Unified Memory Advantage:**
+
+Apple Silicon uses unified memory (CPU and GPU share RAM). Benefits:
+- Zero-copy tensor transfers (no CPU↔GPU memcpy)
+- Lower latency for small batches
+- Higher effective memory bandwidth
+
+**CLIP GPU Acceleration (Vision Models):**
+
+```typescript
+// src/services/llm.ts - initializeMultimodal()
+const useGpuForClip = totalMemoryBytes > 4 * 1024 * 1024 * 1024;
+
+await llmService.initMultimodal({
+  mmProjPath: model.mmProjPath,
+  useGpu: useGpuForClip,
+});
+```
+
+CLIP image encoder runs on Metal GPU (if enabled). Provides 2-3x speedup for vision inference.
+
+**Known Issues:**
+
+<Note>
+  **M1 iPad Air throttling:** Sustained generation (>2 minutes) may trigger thermal throttling, reducing GPU clocks by 20-30%. Performance degrades to ~70% of initial speed.
+</Note>
+
+## Image Generation Acceleration
+
+### Qualcomm QNN NPU (Android)
+
+Qualcomm AI Engine Direct (QNN) accelerates Stable Diffusion on the Hexagon DSP (Neural Processing Unit).
+
+**Architecture:**
+
+```
+local-dream (C++)
+  ↓
+QNN Backend (libQnnHtp.so)
+  ↓
+FastRPC (IPC to DSP)
+  ↓
+Hexagon cDSP (Compute DSP)
+  ↓
+HTP Accelerator (Hexagon Tensor Processor)
+```
+
+**Supported Chipsets:**
+
+<Tabs>
+  <Tab title="Snapdragon 8 Gen 1">
+    **SoC:** SM8450  
+    **HTP Version:** V68  
+    **Performance:** ~8-12s for 512×512 @ 20 steps  
+    **Models:** `qnn-min` variant (conservative optimizations)
+  </Tab>
+  
+  <Tab title="Snapdragon 8 Gen 2">
+    **SoC:** SM8550  
+    **HTP Version:** V73  
+    **Performance:** ~6-8s for 512×512 @ 20 steps  
+    **Models:** `qnn-8gen2` variant (V73+ optimizations)
+  </Tab>
+  
+  <Tab title="Snapdragon 8 Gen 3">
+    **SoC:** SM8650  
+    **HTP Version:** V75  
+    **Performance:** ~5-7s for 512×512 @ 20 steps  
+    **Models:** `qnn-8gen2` variant (V75 uses same libs as V73)
+  </Tab>
+  
+  <Tab title="Snapdragon 8 Gen 4/5">
+    **SoC:** SM8750 / SM8850  
+    **HTP Version:** V79 / V81  
+    **Performance:** ~4-6s for 512×512 @ 20 steps (estimated)  
+    **Models:** `qnn-8gen2` variant (forward compatible)
+  </Tab>
+</Tabs>
+
+**QNN Model Format:**
+
+Stable Diffusion models pre-compiled for QNN:
+- `unet.bin` — UNet denoising network (HTP-optimized)
+- `vae_decoder.bin` — VAE decoder (HTP-optimized)
+- `clip.bin` or `clip.mnn` — Text encoder (CPU or MNN)
+
+Models from `xororz/sd-qnn-*` HuggingFace repos.
+
+**Runtime Library Selection:**
+
+```kotlin
+// LocalDreamModule.kt - buildCommand()
+val command = mutableListOf(
+    executable.absolutePath,
+    "--backend", File(runtimeDir, "libQnnHtp.so").absolutePath,
+    "--system_library", File(runtimeDir, "libQnnSystem.so").absolutePath,
+    // ...
+)
+```
+
+`libQnnHtp.so` automatically loads chipset-specific variant:
+- Detects HTP version via `/sys/devices/soc0/soc_id`
+- Loads corresponding `libQnnHtpV73.so`, `libQnnHtpV75.so`, etc.
+- Falls back to oldest compatible version if exact match unavailable
+
+**Environment Variables:**
+
+```kotlin
+// LocalDreamModule.kt:191-193
+env["LD_LIBRARY_PATH"] = systemLibPaths.joinToString(":")
+env["DSP_LIBRARY_PATH"] = runtimeDir.absolutePath
+env["ADSP_LIBRARY_PATH"] = runtimeDir.absolutePath
+```
+
+- `DSP_LIBRARY_PATH` — Hexagon DSP firmware location
+- `ADSP_LIBRARY_PATH` — Audio DSP library path (required for some SoCs)
+
+**Performance Comparison:**
+
+| Backend | Device | Time (512×512, 20 steps) | Power |
+|---|---|---|---|
+| QNN (HTP) | SD 8 Gen 3 | 5-7s | ~3W |
+| MNN (CPU) | SD 8 Gen 3 | 15s | ~5W |
+| QNN (HTP) | SD 8 Gen 2 | 6-8s | ~3.5W |
+| MNN (CPU) | SD 8 Gen 2 | 18s | ~5.5W |
+
+QNN provides 2-3x speedup with 40% lower power consumption.
+
+**Known Issues:**
+
+<Warning>
+  **SELinux blocking DSP access:** Some devices (Xiaomi, OPPO with custom Android skins) have SELinux policies that block FastRPC. QNN initialization fails with "Failed to create backend." Solution: Use MNN (CPU) fallback.
+</Warning>
+
+**Cache Warmup:**
+
+First generation after model load takes 60-120s for QNN to:
+1. Analyze compute graph
+2. Compile ops for HTP
+3. Cache compiled binaries to `/data/local/tmp/qnn_cache/`
+
+Subsequent generations skip warmup and start immediately.
+
+### Apple Neural Engine (iOS)
+
+Apple's dedicated AI accelerator for Core ML inference.
+
+**Architecture:**
+
+```
+Core ML (Swift)
+  ↓
+ANE Compiler (on-device JIT)
+  ↓
+ANE Runtime
+  ↓
+Neural Engine Hardware
+```
+
+**Compute Units:**
+
+```swift
+// CoreMLDiffusionModule.swift
+config.computeUnits = .cpuAndNeuralEngine
+```
+
+Core ML automatically dispatches ops to ANE or CPU based on compatibility.
+
+**ANE Specifications:**
+
+<Tabs>
+  <Tab title="A17 Pro">
+    **TOPs:** 16 (trillion ops/sec)  
+    **Architecture:** 3rd-gen ANE  
+    **Performance:** ~10-12s for SD 1.5 fp16 @ 20 steps  
+    **Found in:** iPhone 15 Pro, iPhone 15 Pro Max
+  </Tab>
+  
+  <Tab title="A18 Pro">
+    **TOPs:** 18  
+    **Architecture:** 4th-gen ANE  
+    **Performance:** ~8-10s for SD 1.5 fp16 @ 20 steps  
+    **Found in:** iPhone 16 Pro, iPhone 16 Pro Max
+  </Tab>
+  
+  <Tab title="M2">
+    **TOPs:** 15.8  
+    **Architecture:** 2nd-gen ANE (same as A15)  
+    **Performance:** ~12-15s for SD 1.5 fp16 @ 20 steps  
+    **Found in:** iPad Pro (2022), MacBook Air (2022)
+  </Tab>
+  
+  <Tab title="M4">
+    **TOPs:** 38  
+    **Architecture:** 5th-gen ANE  
+    **Performance:** ~6-8s for SD 1.5 fp16 @ 20 steps  
+    **Found in:** iPad Pro (2024), iMac (2024)
+  </Tab>
+</Tabs>
+
+**Op Compatibility:**
+
+Core ML dispatches to ANE if:
+- Op is convolution, matrix multiply, or supported activation
+- Tensor shapes are ANE-compatible (batch size 1, certain dimension alignments)
+- Precision is fp16 or int8
+
+**Fallback to CPU:**
+- Custom ops (e.g., some schedulers)
+- Unsupported tensor shapes
+- Dynamic shapes (rare in Stable Diffusion)
+
+**Performance by Model Type:**
+
+| Model | Precision | Size | A17 Pro Time | M4 Time | ANE Utilization |
+|---|---|---|---|---|---|
+| SD 1.5 Palettized | 6-bit | 1GB | 18-22s | 12-15s | 85% |
+| SD 1.5 Full | fp16 | 4GB | 10-12s | 6-8s | 95% |
+| SD 2.1 Full | fp16 | 4GB | 12-15s | 8-10s | 95% |
+| SDXL iOS | 4-bit | 2GB | 25-30s | 15-18s | 80% |
+
+Full-precision models run faster because ANE doesn't need to dequantize weights.
+
+**Power Efficiency:**
+
+ANE power consumption: ~1-2W during inference (vs. 5-8W for GPU). iPhone 15 Pro generates 10 images on a full charge with screen off.
+
+## RAM-Based Limitations
+
+Off Grid enforces RAM-based safety limits to prevent OS-level kills and crashes.
+
+### Pre-Load Memory Checks
+
+```typescript
+// src/services/activeModelService.ts
+function estimateModelMemory(model: DownloadedModel, type: 'text' | 'image'): number {
+  const fileSize = model.fileSize;
+  
+  if (type === 'text') {
+    // Text models: file size × 1.5 (KV cache + activations)
+    const baseRAM = fileSize * 1.5;
+    
+    if (model.isVisionModel && model.mmProjFileSize) {
+      // Vision models: add mmproj overhead
+      return baseRAM + (model.mmProjFileSize * 1.5);
+    }
+    
+    return baseRAM;
+  } else {
+    // Image models: file size × 1.8 (MNN/QNN runtime + intermediate tensors)
+    return fileSize * 1.8;
+  }
+}
+```
+
+**Memory Budget:**
+
+```typescript
+const deviceRAM = await hardware.getTotalMemory();
+const budget = deviceRAM * 0.60; // 60% of total RAM
+
+if (estimatedRAM > budget) {
+  throw new Error('Insufficient RAM');
+}
+```
+
+| Device RAM | 60% Budget | Max Text Model (Q4_K_M) | Max Image Model |
+|---|---|---|---|
+| 4GB | 2.4GB | 1.3B | SD 1.5 Palettized |
+| 6GB | 3.6GB | 3B | SD 1.5 Full |
+| 8GB | 4.8GB | 7B | SD 2.1 Full |
+| 12GB | 7.2GB | 14B | SDXL Full |
+
+**Warning Thresholds:**
+
+<Tabs>
+  <Tab title="50% (Yellow Warning)">
+    ```typescript
+    if (estimatedRAM > deviceRAM * 0.50 && estimatedRAM <= deviceRAM * 0.60) {
+      // Show yellow warning in UI
+      return {
+        canLoad: true,
+        severity: 'warning',
+        message: 'Model will use significant RAM. Close other apps before loading.'
+      };
+    }
+    ```
+    
+    User can proceed but should close background apps.
+  </Tab>
+  
+  <Tab title="60% (Red Error)">
+    ```typescript
+    if (estimatedRAM > deviceRAM * 0.60) {
+      // Block load entirely
+      return {
+        canLoad: false,
+        severity: 'error',
+        message: `Cannot load ${model.name} (~${estimatedGB}GB required) - would exceed device safe limit of ${budgetGB}GB. Unload current model or choose smaller.`
+      };
+    }
+    ```
+    
+    Load prevented to avoid OOM crash.
+  </Tab>
+</Tabs>
+
+### Runtime Context Caps
+
+```typescript
+// src/services/llmHelpers.ts
+function getMaxContextForDevice(totalMemoryBytes: number): number {
+  const totalGB = totalMemoryBytes / (1024 ** 3);
+  
+  if (totalGB <= 4) return 2048;
+  if (totalGB <= 6) return 2048;
+  if (totalGB <= 8) return 4096;
+  return 8192;
+}
+```
+
+Prevents users from setting 8K context on 4GB devices (would cause `abort()` during KV cache allocation).
+
+**Auto-Scaling Context:**
+
+```typescript
+// src/services/llm.ts - initWithAutoContext()
+const requestedContext = userSettings.contextSize;
+const cappedContext = Math.min(requestedContext, getMaxContextForDevice(deviceRAM));
+
+if (cappedContext < requestedContext) {
+  console.warn(`Context capped to ${cappedContext} (device limit)`);
+}
+```
+
+User's 8192 context setting automatically reduced to 2048 on 4GB devices.
+
+### Overload Prevention in ARCHITECTURE.md
+
+From source docs:
+
+> **RAM-Aware Runtime Safeguards:**
+> 
+> On low-RAM devices (e.g. iPhone XS with 4GB), llama.cpp and CLIP can call `abort()` during Metal GPU allocation, which is a POSIX signal that bypasses JavaScript try/catch and kills the app instantly. To prevent this, `initWithAutoContext()` applies device-RAM-based caps before any native call:
+> 
+> | Device RAM | GPU Layers | Context Cap | CLIP GPU |
+> |---|---|---|---|
+> | ≤4GB | 0 (CPU-only) | 2048 | Off |
+> | 4-6GB | Requested | 2048 | On |
+> | 6-8GB | Requested | 4096 | On |
+> | >8GB | Requested | 8192 | On |
+
+**Implementation:**
+
+```typescript
+// src/services/llmHelpers.ts
+export function getGpuLayersForDevice(
+  totalMemoryBytes: number,
+  requestedLayers: number
+): number {
+  if (totalMemoryBytes <= 4 * 1024 * 1024 * 1024) {
+    return 0; // Disable Metal/OpenCL on ≤4GB devices
+  }
+  return requestedLayers;
+}
+```
+
+This runs **before** `initContextWithFallback()`, so the dangerous Metal allocation is never attempted.
+
+## Performance Benchmarks
+
+### Text Generation (Tokens/Sec)
+
+**Android (Snapdragon 8 Gen 3):**
+
+| Model | Size | Quant | CPU Only | OpenCL GPU (33 layers) |
+|---|---|---|---|---|
+| SmolLM3 135M | 135M | Q4_K_M | 45 tok/s | 62 tok/s |
+| Qwen 3 0.6B | 600M | Q4_K_M | 18 tok/s | 28 tok/s |
+| Llama 3.2 3B | 3B | Q4_K_M | 8 tok/s | 14 tok/s |
+| Qwen 3 7B | 7B | Q4_K_M | 3 tok/s | 6 tok/s |
+
+**iOS (A17 Pro):**
+
+| Model | Size | Quant | CPU Only | Metal GPU (All layers) |
+|---|---|---|---|---|
+| SmolLM3 135M | 135M | Q4_K_M | 38 tok/s | 85 tok/s |
+| Qwen 3 0.6B | 600M | Q4_K_M | 12 tok/s | 32 tok/s |
+| Llama 3.2 3B | 3B | Q4_K_M | 5 tok/s | 18 tok/s |
+| Qwen 3 7B | 7B | Q4_K_M | 2 tok/s | 8 tok/s |
+
+### Image Generation (Seconds)
+
+**Android:**
+
+| Backend | Device | Time (512×512, 20 steps) |
+|---|---|---|
+| QNN (NPU) | SD 8 Gen 3 | 5-7s |
+| QNN (NPU) | SD 8 Gen 2 | 6-8s |
+| QNN (NPU) | SD 8 Gen 1 | 8-12s |
+| MNN (CPU) | SD 8 Gen 3 | 15s |
+| MNN (CPU) | SD 7+ Gen 2 | 25s |
+
+**iOS:**
+
+| Model | Device | Time (512×512, 20 steps) |
+|---|---|---|
+| SD 1.5 Full (fp16) | A17 Pro | 10-12s |
+| SD 1.5 Full (fp16) | A18 Pro | 8-10s |
+| SD 1.5 Full (fp16) | M4 | 6-8s |
+| SD 1.5 Palettized (6-bit) | A17 Pro | 18-22s |
+| SDXL iOS (4-bit) | M4 | 15-18s |
+
+### Vision Inference (Seconds)
+
+| Model | Device | Backend | Time (Single Image) |
+|---|---|---|---|
+| SmolVLM 500M | SD 8 Gen 3 | CPU | 12s |
+| SmolVLM 500M | A17 Pro | Metal GPU | 7s |
+| SmolVLM 2.2B | SD 8 Gen 3 | CPU | 28s |
+| SmolVLM 2.2B | A17 Pro | Metal GPU | 12s |
+
+## Best Practices
+
+### For LLM Inference
+
+1. **Start conservative:** Begin with 0 GPU layers, incrementally increase by 8-10 layers while monitoring stability
+2. **Monitor temperature:** Sustained generation can trigger thermal throttling on mobile devices
+3. **Reduce context on ≤4GB devices:** Use 2048 max context to prevent OOM
+4. **Disable flash attention with GPU:** Auto-disabled on Android, but verify on custom builds
+
+### For Image Generation
+
+1. **Prefer NPU/ANE over CPU:** 2-3x faster with lower power consumption
+2. **Use fp16 models on iOS:** Palettized models are 2x slower due to dequantization overhead
+3. **Cache warmup on first run:** Warn users first generation will be slow (QNN cache building)
+4. **Unload text model before image generation:** Prevents RAM contention on 4-6GB devices
+
+### For Memory Management
+
+1. **Respect 60% RAM budget:** Prevents OS kills
+2. **Warn at 50%:** Give users option to close background apps
+3. **Unload before switching models:** Releases GPU/ANE resources
+4. **Monitor with DeviceInfoScreen:** Real-time RAM usage in settings
+
+## Debugging Acceleration Issues
+
+### OpenCL (Android)
+
+```bash
+# Enable OpenCL logging
+adb shell setprop debug.ocl.log 1
+adb logcat | grep -i opencl
+```
+
+**Common errors:**
+- `CL_OUT_OF_HOST_MEMORY` — Reduce GPU layers
+- `CL_DEVICE_NOT_FOUND` — GPU not detected, use CPU
+- SIGSEGV during `clBuildProgram` — OpenCL compiler crash, disable GPU
+
+### Metal (iOS)
+
+```bash
+# Enable Metal validation
+Product → Scheme → Edit Scheme → Run → Diagnostics
+☑ Metal API Validation
+```
+
+**Common errors:**
+- `MTLBuffer allocation failed` — Reduce context size or GPU layers
+- `abort() in mtl_backend_init` — ≤4GB device, GPU layers should be 0
+
+### QNN (Android)
+
+```bash
+# Check DSP access
+adb shell cat /sys/devices/soc0/soc_id
+adb shell ls -l /dev/subsys_*
+
+# QNN logs
+adb logcat | grep -i qnn
+```
+
+**Common errors:**
+- `Failed to create backend` — SELinux blocking DSP, use MNN fallback
+- `libQnnHtp.so not found` — Runtime libs not extracted, check `prepareRuntimeDir()`
+
+### ANE (iOS)
+
+Use Xcode Instruments → Core ML:
+1. Profile → Core ML
+2. Run image generation
+3. Check "ANE Utilization" track
+4. Should be over 80% during UNet inference
+
+Low utilization (under 50%) indicates fallback to CPU — model may not be ANE-optimized.
+
+## References
+
+- **llama.cpp Backends:** `https://github.com/ggerganov/llama.cpp/tree/master/docs/backend`
+- **Qualcomm AI Engine:** `https://www.qualcomm.com/developer/software/qualcomm-ai-engine-direct`
+- **Apple Neural Engine:** `https://github.com/hollance/neural-engine` (reverse engineering)
+- **Core ML Performance:** `https://developer.apple.com/documentation/coreml/optimizing_your_model_for_the_neural_engine`
+- **Metal Performance Shaders:** `https://developer.apple.com/documentation/metalperformanceshaders`

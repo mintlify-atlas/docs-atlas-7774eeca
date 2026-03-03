@@ -1,0 +1,308 @@
+---
+title: 'Architecture Overview'
+description: 'High-level system architecture of Off Grid mobile AI inference'
+---
+
+## System Architecture
+
+Off Grid is a React Native mobile app with native modules for on-device AI inference. The architecture follows a layered design separating UI, services, native bridges, and hardware acceleration.
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                       React Native UI Layer                       │
+│            (Brutalist Design System - TypeScript/TSX)            │
+├──────────────────────────────────────────────────────────────────┤
+│                  TypeScript Services Layer                        │
+│                                                                   │
+│   Core Services (background-safe singletons):                    │
+│   ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐│
+│   │   llmService    │  │  whisperService │  │ hardware        ││
+│   │  (llama.rn)     │  │  (whisper.rn)   │  │  (RAM/CPU info) ││
+│   └─────────────────┘  └─────────────────┘  └─────────────────┘│
+│                                                                   │
+│   Orchestration Services (lifecycle-independent):                │
+│   ┌───────────────────────┐  ┌───────────────────────┐          │
+│   │  generationService    │  │ imageGenerationService│          │
+│   │  (text, background)   │  │  (images, background) │          │
+│   └───────────────────────┘  └───────────────────────┘          │
+│                                                                   │
+│   Management Services:                                           │
+│   ┌────────────────────┐  ┌────────────────────┐                │
+│   │activeModelService  │  │   modelManager     │                │
+│   │(singleton, mem mgmt)│  │(download, storage) │                │
+│   └────────────────────┘  └────────────────────┘                │
+├──────────────────────────────────────────────────────────────────┤
+│                 Native Module Bridge (JNI / ObjC)                 │
+├──────────────────────────────────────────────────────────────────┤
+│   Native Implementations:                                         │
+│                                                                   │
+│   Cross-platform:                                                 │
+│   ┌──────────────┐  ┌──────────────┐                             │
+│   │   llama.rn   │  │  whisper.rn  │                             │
+│   │ (C++ native) │  │ (C++ native) │                             │
+│   └──────────────┘  └──────────────┘                             │
+│                                                                   │
+│   Android:                           iOS:                         │
+│   ┌──────────┐ ┌───────────────┐    ┌──────────────────────┐    │
+│   │local-dream│ │DownloadManager│    │CoreMLDiffusionModule │    │
+│   │(C++/MNN)  │ │   (Kotlin)    │    │(StableDiffusionPipe) │    │
+│   └──────────┘ └───────────────┘    └──────────────────────┘    │
+├──────────────────────────────────────────────────────────────────┤
+│   Hardware Acceleration:                                          │
+│   Android:                           iOS:                         │
+│   ┌──────────────────┐              ┌──────────────────┐         │
+│   │OpenCL (Adreno GPU)│              │ ANE (Neural Engine)│         │
+│   │  Text LLMs only   │              │  Image gen + LLMs │         │
+│   ├──────────────────┤              ├──────────────────┤         │
+│   │   QNN (NPU)      │              │  Metal (GPU)     │         │
+│   │  Image gen only  │              │  LLM inference   │         │
+│   └──────────────────┘              └──────────────────┘         │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+## Layer Breakdown
+
+### UI Layer (React Native)
+
+**Framework:** React Native 0.83 with TypeScript 5.x
+
+**Design System:** Brutalist terminal-inspired interface with monochromatic palette and emerald accents. Full light/dark theme support via `useTheme()` hook.
+
+**Navigation:** React Navigation 7.x with bottom tabs and modal stacks.
+
+**Animations:** `react-native-reanimated` for spring-based physics and staggered entrance effects.
+
+**Key Components:**
+- **ChatInput** — Message composition with attachment badges (src/components/ChatInput.tsx)
+- **ModelCard** — Model display with actions (src/components/ModelCard.tsx)
+- **AnimatedPressable** — Spring scale feedback + haptics (src/components/AnimatedPressable.tsx)
+- **AppSheet** — Custom swipe-dismissible bottom sheets (src/components/AppSheet.tsx)
+
+### Services Layer (TypeScript)
+
+All core services are **singleton instances** to prevent duplicate model loading, concurrent inference conflicts, and memory leaks.
+
+#### Core Services
+
+**llmService** (src/services/llm.ts:26)  
+Wraps llama.rn for GGUF model lifecycle and text/vision inference:
+- Model loading with automatic context scaling based on device RAM
+- Streaming token generation with 50ms batched UI updates
+- Vision model support via mmproj (multimodal projector) files
+- Tool calling detection from jinja chat templates
+- KV cache management with quantization (f16/q8_0/q4_0)
+
+**whisperService**  
+Wraps whisper.rn for speech-to-text transcription with multiple model sizes (Tiny, Base, Small).
+
+**hardwareService** (src/services/hardware.ts)  
+Device info retrieval: RAM, CPU cores, SoC model, storage.
+
+#### Orchestration Services
+
+**generationService** (src/services/generationService.ts:29)  
+Background-safe text generation orchestration:
+- Maintains generation state independently of React component lifecycle
+- Token batching: collects tokens and flushes to UI every 50ms
+- Message queue: non-blocking input during active generation
+- Tool loop integration (max 3 iterations, 5 tool calls)
+
+<CodeGroup>
+```typescript generationService pattern
+class GenerationService {
+  private state: GenerationState = { isGenerating: false, ... };
+  private listeners: Set<GenerationListener> = new Set();
+
+  subscribe(listener: GenerationListener): () => void {
+    this.listeners.add(listener);
+    listener(this.getState()); // Immediate state delivery
+    return () => this.listeners.delete(listener);
+  }
+
+  private notifyListeners(): void {
+    const state = this.getState();
+    this.listeners.forEach(listener => listener(state));
+  }
+}
+```
+
+```typescript UI subscription (ChatScreen)
+import { useEffect, useState } from 'react';
+import { generationService } from '../services/generationService';
+
+function ChatScreen() {
+  const [genState, setGenState] = useState(generationService.getState());
+
+  useEffect(() => {
+    // Subscribe on mount, get current state immediately
+    const unsubscribe = generationService.subscribe(setGenState);
+    return unsubscribe; // Cleanup on unmount
+  }, []);
+
+  // Generation continues even if user navigates away
+}
+```
+</CodeGroup>
+
+**imageGenerationService** (src/services/imageGenerationService.ts:111)  
+Background-safe image generation with progressive preview:
+- Continues generation when screens unmount
+- Real-time step progress (1-50 steps)
+- Preview images every N steps
+- Optional LLM-based prompt enhancement
+
+#### Management Services
+
+**activeModelService** (src/services/activeModelService/index.ts:29)  
+Singleton for safe model loading/unloading:
+- Guards against concurrent loads with promise deduplication
+- Pre-load memory checks (60% RAM budget enforcement)
+- Automatic model unload when switching models
+- Synchronization with native state on app resume
+
+<CodeGroup>
+```typescript src/services/activeModelService/index.ts:60
+async loadTextModel(modelId: string, timeoutMs: number = 120000): Promise<void> {
+  // Already loaded natively — ensure store reflects it
+  if (this.loadedTextModelId === modelId && llmService.isModelLoaded()) {
+    const store = useAppStore.getState();
+    if (store.activeModelId !== modelId) { 
+      store.setActiveModelId(modelId); 
+    }
+    return;
+  }
+
+  // Wait for in-flight load to complete
+  if (this.textLoadPromise !== null) {
+    await this.textLoadPromise;
+    if (this.loadedTextModelId === modelId) {
+      const store = useAppStore.getState();
+      if (store.activeModelId !== modelId) { 
+        store.setActiveModelId(modelId); 
+      }
+      return;
+    }
+  }
+
+  // Proceed with load...
+  this.loadingState.text = true;
+  this.notifyListeners();
+  this.textLoadPromise = doLoadTextModel({ /* ... */ });
+  await this.textLoadPromise;
+}
+```
+</CodeGroup>
+
+### Native Bridge Layer
+
+**JNI (Android)** and **Objective-C (iOS)** bindings connect TypeScript to native C++ and Swift modules.
+
+### Native Module Layer
+
+#### Cross-Platform
+
+**llama.rn** — llama.cpp compiled for ARM64 with GPU acceleration:
+- Android: OpenCL (Adreno GPUs), NEON/i8mm SIMD
+- iOS: Metal GPU, Neural Engine for vision models
+- Multimodal support via mmproj (CLIP vision encoder)
+
+**whisper.rn** — whisper.cpp for real-time audio transcription.
+
+#### Android-Only
+
+**LocalDreamModule** (android/app/src/main/java/ai/offgridmobile/localdream/LocalDreamModule.kt:32)  
+Stable Diffusion via local-dream C++ library:
+- **MNN backend:** CPU inference (all ARM64 devices)
+- **QNN backend:** Qualcomm NPU (Snapdragon 8 Gen 1+)
+- Subprocess architecture: spawns HTTP server on localhost:18081
+- Automatic backend selection with CPU fallback
+
+**DownloadManagerModule** (android/app/src/main/java/ai/offgridmobile/download/DownloadManagerModule.kt:17)  
+Native Android DownloadManager wrapper:
+- Background downloads with system notifications
+- Progress polling (500ms intervals)
+- Persistent download tracking via SharedPreferences
+- Cleanup of completed/stale downloads
+
+**PDFExtractorModule** (android/app/src/main/java/ai/offgridmobile/pdf/PDFExtractorModule.kt:11)  
+Text extraction using `PdfiumAndroid` library with page-by-page processing.
+
+#### iOS-Only
+
+**CoreMLDiffusionModule** (ios/CoreMLDiffusionModule.swift:11)  
+Stable Diffusion via Apple's `ml-stable-diffusion` pipeline:
+- Neural Engine (ANE) + CPU compute units
+- DPM-Solver scheduler for faster convergence
+- Supports both SD 1.5/2.1 and SDXL models
+- Palettized (6-bit) and full-precision (fp16) models
+
+**PDFExtractorModule** (ios/OffgridMobile/PDFExtractor/PDFExtractorModule.swift:4)  
+Text extraction using Apple's `PDFKit` framework.
+
+## Technology Stack
+
+| Layer | Technologies |
+|-------|-------------|
+| **UI Framework** | React Native 0.83, TypeScript 5.x |
+| **State Management** | Zustand 5.x with AsyncStorage persistence |
+| **Navigation** | React Navigation 7.x |
+| **Animations** | React Native Reanimated 4.x, haptic feedback |
+| **Text Inference** | llama.cpp via llama.rn (GGUF format) |
+| **Vision Inference** | llama.cpp multimodal (mmproj) |
+| **Voice Transcription** | whisper.cpp via whisper.rn |
+| **Image Generation (Android)** | local-dream (MNN/QNN backends) |
+| **Image Generation (iOS)** | ml-stable-diffusion (Core ML) |
+| **PDF Extraction (Android)** | PdfiumAndroid |
+| **PDF Extraction (iOS)** | PDFKit |
+| **File Picker** | @react-native-documents/picker |
+| **Document Viewer** | @react-native-documents/viewer |
+
+## Data Flow
+
+### Text Generation Flow
+
+1. **User Input** → ChatScreen collects message + attachments
+2. **Service Call** → `generationService.generateResponse()` or `.generateWithTools()`
+3. **Context Management** → llmService passes all messages to llama.rn (no JS truncation)
+4. **Native Inference** → llama.cpp streams tokens via callback
+5. **Token Batching** → generationService buffers tokens, flushes every 50ms
+6. **UI Update** → chatStore updates streaming message
+7. **Completion** → Finalize message with metadata (tok/s, TTFT, generation time)
+
+### Vision Inference Flow
+
+1. **Image Attachment** → User attaches photo from camera/library
+2. **mmproj Check** → llmService verifies multimodal initialized
+3. **OAI Message Format** → Convert to OpenAI-compatible message with image URIs
+4. **CLIP Encoding** → Native CLIP processes image to embeddings
+5. **LLM Processing** → llama.cpp merges text + vision embeddings
+6. **Response** → Stream tokens as normal text generation
+
+### Image Generation Flow (Android)
+
+1. **Prompt Input** → User sends text or enables image mode toggle
+2. **Intent Detection** → Pattern matching or LLM-based classification
+3. **Prompt Enhancement** → Optional: LLM expands prompt ("a dog" → detailed 75-word description)
+4. **Model Load** → LocalDreamModule starts subprocess server (MNN or QNN)
+5. **HTTP Request** → TypeScript sends POST to localhost:18081/generate
+6. **SSE Stream** → Server sends progress events (step/totalSteps) + preview images
+7. **RGB → PNG** → Native code decodes base64 RGB, converts to PNG
+8. **Gallery Save** → Image stored in app files, added to gallery
+
+### Image Generation Flow (iOS)
+
+1. **Prompt Input** → Same as Android
+2. **Pipeline Load** → CoreMLDiffusionModule loads StableDiffusionPipeline
+3. **Generation** → Native Swift calls `pipeline.generateImages()` with progress callback
+4. **ANE Acceleration** → Neural Engine processes UNet denoising steps
+5. **PNG Save** → CGImage converted to PNG, stored in documents
+6. **Gallery Save** → Same as Android
+
+## Design Patterns
+
+See [System Design](./system-design) for detailed patterns:
+- Singleton services
+- Background-safe orchestration
+- Memory-first loading strategy
+- Combined asset tracking (vision models + mmproj)
+- State cleanup patterns

@@ -1,0 +1,504 @@
+---
+title: FAQ
+description: Frequently asked questions for Off Grid developers and advanced users
+icon: messages-question
+---
+
+## General
+
+<AccordionGroup>
+  <Accordion title="What models are supported?">
+    Off Grid supports:
+
+    **Text Generation:**
+    - Any **GGUF-format model** compatible with llama.cpp
+    - Download from HuggingFace or import `.gguf` files from device storage
+    - Recommended: Qwen 3, Llama 3.2, Gemma 3, Phi-4, SmolLM3, Mistral, Command-R, DeepSeek
+
+    **Vision AI:**
+    - SmolVLM (500M, 2.2B) — Fast, compact, 7-10s inference
+    - Qwen3-VL (2B, 8B) — Multilingual vision-language
+    - Gemma 3n E4B — Vision + audio
+    - LLaVA, MiniCPM-V
+
+    **Image Generation:**
+    - **Android (MNN)**: Anything V5, Absolute Reality, QteaMix, ChilloutMix, CuteYukiMix
+    - **Android (QNN)**: 20 models including DreamShaper, Realistic Vision (Snapdragon 8 Gen 1+ only)
+    - **iOS (Core ML)**: SD 1.5, SD 2.1, SDXL (palettized and full precision)
+
+    **Voice Transcription:**
+    - Whisper Tiny, Base, Small (speed vs accuracy tradeoff)
+
+    See [Architecture Overview](/technical/architecture-overview) for full capabilities matrix.
+  </Accordion>
+
+  <Accordion title="Does it work completely offline?">
+    **Yes**, after model download.
+
+    - Download models once over Wi-Fi
+    - Enable airplane mode and use indefinitely
+    - Zero network activity during inference
+    - All conversations, images, and transcriptions happen entirely on-device
+
+    **Exception:** Tool calling web search requires network for Brave Search scraping. All other tools (calculator, date/time, device info) work offline.
+  </Accordion>
+
+  <Accordion title="What data is collected?">
+    **None.**
+
+    Off Grid is **100% local and private**:
+    - No telemetry, analytics, or crash reporting
+    - No servers, no authentication, no accounts
+    - Conversations stored in app's private storage (OS-level encryption)
+    - Models downloaded directly from HuggingFace (open-source repos)
+    - No third-party SDKs that phone home
+
+    **Network activity is limited to:**
+    - Model downloads from HuggingFace CDN (one-time)
+    - Model metadata from HuggingFace API (browsing only)
+    - Web search (if enabled in tool calling)
+
+    After model download, you can use Off Grid in airplane mode forever.
+  </Accordion>
+
+  <Accordion title="Which devices are supported?">
+    **Android:**
+    - Android 8.0 (API 26) or higher
+    - ARM64 processor (ARMv8-A)
+    - Minimum 4GB RAM (6GB+ recommended)
+    - 8GB+ free storage for models
+
+    **iOS:**
+    - iOS 14.0 or higher
+    - 64-bit ARM (A12 Bionic or newer)
+    - Minimum 4GB RAM (6GB+ recommended)
+    - 8GB+ free storage for models
+
+    **macOS:**
+    - Apple Silicon Macs via Mac Catalyst / iPad compatibility
+    - Download from iOS App Store, runs natively on M1/M2/M3/M4
+
+    See [Performance Benchmarks](/technical/performance-benchmarks) for device-specific benchmarks.
+  </Accordion>
+
+  <Accordion title="How much storage do I need?">
+    **Model sizes:**
+
+    **Text models (GGUF):**
+    - 0.6B Q4_K_M: ~400MB
+    - 3B Q4_K_M: ~2GB
+    - 7B Q4_K_M: ~4GB
+    - 7B Q5_K_M: ~5GB
+    - 14B Q4_K_M: ~8GB
+
+    **Vision models (GGUF + mmproj):**
+    - SmolVLM 500M: ~600MB total
+    - SmolVLM 2.2B: ~2.5GB total
+    - Qwen3-VL 2B: ~3GB total
+
+    **Image models:**
+    - Android (MNN/QNN): ~1-1.2GB per model
+    - iOS (Core ML palettized): ~1GB per model
+    - iOS (Core ML full): ~4GB per model
+
+    **Whisper models:**
+    - Tiny: ~75MB
+    - Base: ~140MB
+    - Small: ~460MB
+
+    **Recommendation:** Start with **8GB free storage** to download one text model, one image model, and one Whisper model.
+  </Accordion>
+
+  <Accordion title="Can I use my own models?">
+    **Yes!** Off Grid supports **Bring Your Own Model** (BYOM):
+
+    **Text models:**
+    1. Convert your model to GGUF format using llama.cpp
+    2. Transfer `.gguf` file to your device
+    3. Go to Models screen → "Import Local Model"
+    4. Select file from device storage
+    5. Off Grid copies to app storage and registers it
+
+    **Image models:**
+    - Android: Must be pre-converted to MNN or QNN format
+    - iOS: Must be compiled to Core ML format
+    - Currently requires manual placement in app's models directory (advanced users)
+
+    **Vision models:**
+    - Import both GGUF and mmproj files
+    - Off Grid automatically links them if named correctly
+
+    See [Model Management](/guides/model-management) for full instructions.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Performance
+
+<AccordionGroup>
+  <Accordion title="What is GPU acceleration support?">
+    Off Grid supports hardware acceleration on both platforms:
+
+    **Android:**
+    - **OpenCL** — GPU offloading for text LLMs on Qualcomm Adreno GPUs (experimental)
+    - **QNN** — NPU acceleration for image generation (Snapdragon 8 Gen 1+ only)
+    - **ARM NEON, i8mm, dotprod** — SIMD CPU optimizations
+
+    **iOS:**
+    - **Metal** — GPU acceleration for text LLMs (automatically disabled on ≤4GB RAM devices)
+    - **ANE (Neural Engine)** — Hardware acceleration for image generation via Core ML
+    - **ARM NEON** — SIMD CPU optimizations
+
+    **Configuration:**
+    - Settings → Model Settings → Enable GPU (on/off)
+    - Settings → Model Settings → GPU Layers (0-99)
+
+    <Warning>
+      GPU acceleration is experimental on some devices. Start with **0 GPU layers** and incrementally increase while monitoring stability. See [Troubleshooting](/development/troubleshooting).
+    </Warning>
+  </Accordion>
+
+  <Accordion title="How fast is text generation?">
+    **Flagship devices (Snapdragon 8 Gen 2+, A17 Pro):**
+    - CPU: 15-30 tok/s (4-8 threads)
+    - GPU (OpenCL/Metal): 20-40 tok/s (stability varies)
+    - TTFT: 0.5-2s depending on context length
+
+    **Mid-range devices (Snapdragon 7 series, A14):**
+    - CPU: 5-15 tok/s
+    - TTFT: 1-3s
+
+    **Factors:**
+    - Model size (larger = slower)
+    - Quantization (lower bits = faster)
+    - Context length (more tokens = slower)
+    - Thread count (4-8 threads optimal)
+    - GPU layers (more = faster if stable)
+
+    See [Performance Benchmarks](/technical/performance-benchmarks) for detailed benchmarks.
+  </Accordion>
+
+  <Accordion title="How fast is image generation?">
+    **Android:**
+    - **CPU (MNN)**: ~15s for 512×512 @ 20 steps (Snapdragon 8 Gen 3), ~30s (Snapdragon 7 series)
+    - **NPU (QNN)**: ~5-10s for 512×512 @ 20 steps (chipset-dependent, 8 Gen 1+)
+
+    **iOS:**
+    - **ANE (Core ML)**: ~8-15s for 512×512 @ 20 steps (A17 Pro/M-series)
+    - **Palettized models**: ~2x slower due to dequantization overhead
+
+    **Factors:**
+    - Steps (fewer = faster, lower quality)
+    - Resolution (512×512 standard)
+    - Guidance scale (lower = faster)
+    - Model precision (palettized vs full)
+  </Accordion>
+
+  <Accordion title="How fast is vision inference?">
+    **SmolVLM 500M:**
+    - Flagship: ~7s per image
+    - Mid-range: ~15s per image
+
+    **SmolVLM 2.2B:**
+    - Flagship: ~10-15s per image
+    - Mid-range: ~25-35s per image
+
+    **Qwen3-VL 2B:**
+    - Flagship: ~12-18s per image
+
+    **Factors:**
+    - Model size (larger = slower)
+    - Device RAM (more RAM = can use larger models)
+    - KV cache state (cleared cache = 30-60s slower on next inference)
+
+    See [Troubleshooting](/development/troubleshooting) for optimization tips.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Features
+
+<AccordionGroup>
+  <Accordion title="What are projects?">
+    Projects are **custom system prompts** that provide conversation context:
+
+    - Define AI personality, expertise, or role
+    - Apply to all conversations in that project
+    - Example: "Code Review" project with system prompt about being a senior engineer
+    - Switch projects to change AI behavior without reloading model
+
+    **Usage:**
+    1. Create project with system prompt
+    2. Select project before starting conversation
+    3. All messages in that conversation use project's system prompt
+
+    See `src/stores/projectStore.ts` for implementation.
+  </Accordion>
+
+  <Accordion title="What is tool calling?">
+    On-device function calling for models that support it. The system **automatically detects tool calling capability** from the model's jinja chat template at load time.
+
+    **Available tools:**
+    - **Web Search** — Scrapes Brave Search for top 5 results (requires network)
+    - **Calculator** — Safe recursive descent parser (no `eval()`)
+    - **Date/Time** — Formatted date/time with timezone support
+    - **Device Info** — Battery, storage, memory stats
+
+    **Tool loop:**
+    - Max 3 iterations per generation (prevents runaway loops)
+    - Max 5 total tool calls across all iterations
+    - Flow: LLM generates → tools executed → results injected → LLM continues
+
+    **Configuration:**
+    - Settings → Model Settings → Enabled Tools
+    - Tools button disabled when model doesn't support function calling
+
+    See [Tool Calling](/features/tool-calling) for implementation details.
+  </Accordion>
+
+  <Accordion title="What is AI prompt enhancement?">
+    When enabled, uses the **currently loaded text model** to expand simple prompts into detailed Stable Diffusion prompts:
+
+    ```
+    User input: "Draw a dog"
+
+    LLM enhancement:
+    "A golden retriever with soft, fluffy fur, sitting gracefully
+    in a sunlit meadow, photorealistic, 8k, detailed, natural
+    lighting, shallow depth of field, professional photography"
+    ```
+
+    **How it works:**
+    1. User enters simple image prompt
+    2. System sends to LLM with enhancement-specific system prompt
+    3. LLM expands to ~75-word detailed prompt
+    4. Enhanced prompt sent to Stable Diffusion model
+    5. System resets LLM state (stops generation, preserves KV cache)
+
+    **Configuration:**
+    - Settings → Image Settings → Enhance Prompts (on/off)
+
+    See `src/services/imageGenerationService.ts` for implementation.
+  </Accordion>
+
+  <Accordion title="What is the message queue?">
+    Send messages while the LLM is still generating a response. Messages are queued and processed automatically after the current generation completes.
+
+    **Features:**
+    - **Non-blocking input** — Send button active during generation
+    - **Queue indicator** — Shows count and preview in toolbar
+    - **Clear queue** — Tap "x" to discard queued messages
+    - **Aggregated processing** — Multiple queued messages combined into single prompt
+    - **Image bypass** — Image generation skips queue, processes immediately
+
+    **Implementation:**
+    - Queue lives in `generationService.ts` (not persisted)
+    - Multiple queued messages aggregated: texts joined with `\n\n`, attachments combined
+
+    See [Text Generation](/features/text-generation) for details.
+  </Accordion>
+
+  <Accordion title="What document formats are supported?">
+    Attach documents to chat messages for context-aware conversations:
+
+    **Supported formats:**
+    - **Text**: `.txt`, `.md`, `.log`
+    - **Code**: `.py`, `.js`, `.ts`, `.jsx`, `.tsx`, `.java`, `.c`, `.cpp`, `.h`, `.swift`, `.kt`, `.go`, `.rs`, `.rb`, `.php`, `.sql`, `.sh`
+    - **Data**: `.csv`, `.json`, `.xml`, `.yaml`, `.yml`, `.toml`, `.ini`, `.cfg`, `.conf`, `.html`
+    - **PDF**: Native text extraction via platform-specific modules
+
+    **Features:**
+    - Native file picker integration
+    - PDF text extraction (Android: `PdfRenderer`, iOS: `PDFKit`)
+    - Persistent storage (survives temp file cleanup)
+    - Tappable badges (opens in QuickLook/Intent viewer)
+    - 5MB size limit, 50K character truncation
+
+    See [Document Attachments](/development#document-attachments) for implementation.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Development
+
+<AccordionGroup>
+  <Accordion title="How do I build from source?">
+    ```bash
+    git clone https://github.com/alichherawalla/off-grid-mobile.git
+    cd off-grid-mobile
+    npm install
+
+    # Android
+    cd android && ./gradlew clean && cd ..
+    npm run android
+
+    # iOS
+    cd ios && pod install && cd ..
+    npm run ios
+    ```
+
+    **Requirements:**
+    - Node.js 20+
+    - JDK 17 / Android SDK 36 (Android)
+    - Xcode 15+ (iOS)
+
+    See [Project Structure](/development#project-structure) for codebase overview.
+  </Accordion>
+
+  <Accordion title="How do I run tests?">
+    ```bash
+    npm test              # All tests (Jest + Android + iOS)
+    npm run test:e2e      # Maestro E2E flows
+    ```
+
+    **Test coverage:**
+    - **React Native** — Jest + React Native Testing Library (stores, services, components, screens)
+    - **Android** — JUnit (LocalDream, DownloadManager, BroadcastReceiver)
+    - **iOS** — XCTest (PDFExtractor, CoreMLDiffusion, DownloadManager)
+    - **E2E** — Maestro (launch, chat, models, downloads)
+
+    CI runs all tests on every PR. Coverage thresholds enforced via Codecov.
+  </Accordion>
+
+  <Accordion title="What are the quality gates?">
+    All quality gates run automatically via Husky on every `git commit`:
+
+    | Staged file type | Checks |
+    |------------------|--------|
+    | `.ts`/`.tsx`/`.js`/`.jsx` | ESLint (staged only), `tsc --noEmit`, `npm test` |
+    | `.swift` | SwiftLint (staged only), `npm run test:ios` |
+    | `.kt`/`.kts` | `compileDebugKotlin`, `lintDebug`, `npm run test:android` |
+
+    **Requirements:**
+    - SwiftLint: `brew install swiftlint` (skipped with warning if not installed)
+    - Android checks require Gradle wrapper in `android/`
+
+    **Never skip with `--no-verify`**. Fix the errors and recommit.
+  </Accordion>
+
+  <Accordion title="What native modules are included?">
+    **llama.rn (Android + iOS):**
+    - Compiles llama.cpp for ARM64
+    - Android: JNI bindings, OpenCL GPU offloading
+    - iOS: Metal GPU acceleration
+    - Multimodal (vision) via mmproj
+
+    **whisper.rn (Android + iOS):**
+    - Compiles whisper.cpp for ARM64
+    - Real-time audio recording and transcription
+
+    **local-dream (Android):**
+    - C++ Stable Diffusion implementation
+    - MNN backend (CPU), QNN backend (NPU)
+
+    **CoreMLDiffusionModule (iOS):**
+    - Swift bridge to Apple's `ml-stable-diffusion`
+    - ANE acceleration, DPM-Solver scheduler
+
+    **PdfExtractorModule (Android + iOS):**
+    - Android: Kotlin + `PdfRenderer`
+    - iOS: Swift + `PDFKit`
+
+    **DownloadManager (Android):**
+    - Native Android DownloadManager wrapper
+    - Background download support
+
+    See [Native Modules](/development#native-modules) for full reference.
+  </Accordion>
+
+  <Accordion title="How does state management work?">
+    Application state managed via **Zustand** with **AsyncStorage persistence**:
+
+    **Stores:**
+    - `appStore` — Downloaded models, settings, hardware info, gallery
+    - `chatStore` — Conversations, messages, streaming state
+    - `projectStore` — Projects (custom system prompts)
+    - `authStore` — Passphrase lock state
+    - `whisperStore` — Whisper model state
+
+    **Persistence:**
+    ```typescript
+    const useAppStore = create<AppStore>()(persist(
+      (set, get) => ({ /* state and actions */ }),
+      { name: 'app-storage', storage: createJSONStorage(() => AsyncStorage) }
+    ));
+    ```
+
+    All stores automatically persist on state changes, rehydrate on app launch.
+
+    See [State Management](/development#state-management) for architecture.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Privacy & Security
+
+<AccordionGroup>
+  <Accordion title="Where is data stored?">
+    All data stored in **app's private storage** (OS-level encryption):
+
+    **Android:**
+    - Conversations: AsyncStorage (SQLite, encrypted at OS level)
+    - Models: `/data/data/ai.offgridmobile/files/models/`
+    - Images: `/data/data/ai.offgridmobile/files/images/`
+    - Settings: AsyncStorage
+
+    **iOS:**
+    - Conversations: AsyncStorage (encrypted at OS level)
+    - Models: `Library/Application Support/models/`
+    - Images: `Library/Application Support/images/`
+    - Settings: AsyncStorage
+
+    All data **inaccessible to other apps** due to OS sandboxing.
+  </Accordion>
+
+  <Accordion title="What is passphrase lock?">
+    App-level security layer on top of OS encryption:
+
+    - Protect conversations with passphrase
+    - Locks on app backgrounding (configurable timeout)
+    - Passphrase stored securely in Android Keystore
+    - Conversations encrypted with AES-256
+    - Biometric unlock (planned)
+
+    **Configuration:**
+    - Settings → Security → Passphrase Lock
+
+    See `src/services/authService.ts` for implementation.
+  </Accordion>
+
+  <Accordion title="Can I export my data?">
+    **Currently:**
+    - Generated images can be exported to device gallery (share button)
+    - Conversations stored in app's private storage (no export yet)
+
+    **Planned:**
+    - Conversation export/import with encryption
+    - Model export (copy to device storage for sharing)
+
+    See [GitHub Issues](https://github.com/alichherawalla/off-grid-mobile/issues) for feature requests.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Additional Resources
+
+<CardGroup cols={2}>
+  <Card title="Architecture Reference" icon="book" href="/development">
+    Full technical documentation
+  </Card>
+  <Card title="Design System" icon="palette" href="/development/design-system">
+    Brutalist design system reference
+  </Card>
+  <Card title="Troubleshooting" icon="wrench" href="/development/troubleshooting">
+    Common issues and solutions
+  </Card>
+  <Card title="GitHub" icon="github" href="https://github.com/alichherawalla/off-grid-mobile">
+    Source code and issues
+  </Card>
+</CardGroup>

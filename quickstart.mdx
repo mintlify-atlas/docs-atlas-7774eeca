@@ -1,80 +1,318 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quick Start
+description: Get started with Off Grid in 5 minutes. Download your first model, send a message, try vision AI, generate images, and use voice input.
 ---
 
-## Get started in three steps
+# Quick Start
 
-Get your documentation site running locally and make your first customization.
-
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+Get up and running with Off Grid in 5 minutes. This guide walks you through downloading your first model and trying out the core features.
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  Before you begin, make sure you've [installed Off Grid](/installation) on your device.
 </Note>
+
+## Download Your First Model
+
+Off Grid doesn't ship with any AI models pre-installed. You'll need to download at least one model to get started.
+
+<Steps>
+  <Step title="Open the Models screen">
+    From the home screen, tap the **Models** tab at the bottom (or tap **Get Models** from the home screen).
+
+    You'll see a curated list of recommended models, automatically filtered based on your device's available RAM.
+  </Step>
+
+  <Step title="Choose a model">
+    For your first model, we recommend:
+
+    - **Qwen3 0.6B (Q4_K_M)** — Fast, lightweight, great for testing (~500MB)
+    - **SmolLM3 1.7B (Q4_K_M)** — Excellent quality/speed balance (~1GB)
+    - **Llama 3.2 3B (Q4_K_M)** — Higher quality, requires 6GB+ RAM (~2GB)
+
+    <Note>
+      **What is Q4_K_M?**
+      
+      Q4_K_M is a quantization method that compresses models to ~4 bits per weight. It provides the best balance of quality, speed, and file size for mobile devices.
+    </Note>
+
+    Tap on a model to see details (size, parameters, description).
+  </Step>
+
+  <Step title="Download the model">
+    Tap **Download** to start downloading the model.
+
+    - Downloads continue in the background (you can leave the app)
+    - Native notifications show progress
+    - Download progress visible in the **Models** tab
+
+    <Warning>
+      Large models (4GB+) can take 10-30 minutes on slower connections. Make sure you have enough storage space and a stable internet connection.
+    </Warning>
+  </Step>
+
+  <Step title="Wait for download to complete">
+    Once the download completes, the model will appear in your **Downloaded Models** section.
+
+    The model is now ready to use — **no internet required from this point forward**.
+  </Step>
+</Steps>
+
+## Send Your First Message
+
+<Steps>
+  <Step title="Create a new chat">
+    From the home screen, tap **New Chat** (or the **+** button in the Chats tab).
+
+    Your recently downloaded model will be automatically loaded.
+  </Step>
+
+  <Step title="Type a message">
+    Type your first message in the chat input at the bottom of the screen.
+
+    Try something like:
+    - "Explain quantum computing in simple terms"
+    - "Write a haiku about nature"
+    - "What are the key differences between Python and JavaScript?"
+  </Step>
+
+  <Step title="Send and watch the response stream">
+    Tap the **Send** button (paper plane icon).
+
+    You'll see:
+    - The model's response stream in real-time (word by word)
+    - Token generation speed (tok/s) at the bottom
+    - A **Stop** button to interrupt generation if needed
+
+    <Note>
+      **Performance Tip**
+      
+      If generation is slow (< 5 tok/s), try:
+      - Using a smaller model
+      - Reducing context length in Settings → Model Settings
+      - Increasing CPU threads (Settings → Model Settings → Advanced)
+    </Note>
+  </Step>
+</Steps>
+
+## Try Vision AI (Attach an Image)
+
+Vision AI lets you attach images and ask questions about them.
+
+<Steps>
+  <Step title="Download a vision model">
+    Go to **Models** → **Browse Models** and filter by **Vision** models.
+
+    Recommended for first-time users:
+    - **SmolVLM 500M (Q4_K_M)** — Fast, compact, ~7-10s inference (~600MB with mmproj)
+    - **Qwen3-VL 2B (Q4_K_M)** — Better quality, multilingual (~2GB with mmproj)
+
+    <Note>
+      Vision models automatically download a companion **mmproj** file (multimodal projector) needed for image understanding.
+    </Note>
+  </Step>
+
+  <Step title="Start a new chat and switch to the vision model">
+    Create a new chat and tap the model name at the top to open the model selector.
+
+    Select your vision model from the list.
+  </Step>
+
+  <Step title="Attach an image">
+    Tap the **paperclip** icon (📎) in the chat input.
+
+    Choose:
+    - **Take Photo** — Capture with your camera
+    - **Choose from Library** — Select from your photo library
+
+    The image will appear as a thumbnail in the chat input.
+  </Step>
+
+  <Step title="Ask a question about the image">
+    Type a message like:
+    - "What's in this image?"
+    - "Describe the scene in detail"
+    - "Read the text in this image"
+
+    Tap **Send**.
+
+    <Note>
+      Vision inference takes longer than text (7-30s depending on model and device). You'll see a progress indicator while processing.
+    </Note>
+  </Step>
+</Steps>
+
+## Generate Your First Image
+
+Off Grid can generate images entirely on-device using Stable Diffusion.
+
+<Steps>
+  <Step title="Download an image generation model">
+    Go to **Models** → **Image Models** tab.
+
+    **Android:**
+    - **CPU models (MNN)**: Anything V5, Absolute Reality (~1.2GB each)
+    - **NPU models (QNN)**: DreamShaper, Realistic Vision (~1GB each, requires Snapdragon 8 Gen 1+)
+
+    **iOS:**
+    - **SD 1.5 Palettized** (~1GB) — Good balance
+    - **SD 1.5 Full** (~4GB) — Fastest on Apple Silicon
+
+    Tap **Download** on your chosen model.
+  </Step>
+
+  <Step title="Start a new chat with a text model loaded">
+    Image generation works best with a text model loaded (for optional prompt enhancement).
+
+    Create a new chat with any text model active.
+  </Step>
+
+  <Step title="Type an image generation prompt">
+    Off Grid can automatically detect image generation requests. Try:
+    - "Draw a serene mountain landscape at sunset"
+    - "Generate an image of a futuristic city"
+    - "Create a portrait of a golden retriever"
+
+    Or manually toggle **image mode** using the image icon (🎨) next to the send button.
+
+    <Note>
+      **AI Prompt Enhancement**
+      
+      Enable this in Settings → Model Settings → Image Settings to automatically expand simple prompts into detailed Stable Diffusion prompts using your loaded text model.
+    </Note>
+  </Step>
+
+  <Step title="Watch the generation progress">
+    After sending, you'll see:
+    - Real-time progress indicator (steps completed)
+    - Preview images updating every few steps
+    - Generation typically takes 5-30s depending on device and settings
+
+    The final image appears in the chat when complete.
+  </Step>
+</Steps>
+
+## Use Voice Input
+
+Speak instead of typing with on-device Whisper transcription.
+
+<Steps>
+  <Step title="Download a Whisper model">
+    Go to **Settings** → **Voice Settings** → **Whisper Model**.
+
+    Choose:
+    - **Tiny** (~40MB) — Fastest, slightly less accurate
+    - **Base** (~75MB) — Good balance (recommended)
+    - **Small** (~150MB) — Most accurate, slower
+
+    Tap **Download** to download the selected model.
+  </Step>
+
+  <Step title="Enable voice input in a chat">
+    Open any chat and look for the **microphone** icon (🎤) in the chat input.
+  </Step>
+
+  <Step title="Hold to record">
+    Press and hold the microphone button, then speak your message.
+
+    - Release to transcribe
+    - Slide to cancel if you change your mind
+
+    Your speech will be transcribed and inserted into the chat input.
+  </Step>
+
+  <Step title="Send the transcribed message">
+    Review the transcription, edit if needed, then tap **Send**.
+
+    <Note>
+      All audio processing happens on-device. No audio is ever sent to the cloud.
+    </Note>
+  </Step>
+</Steps>
+
+## Advanced Features to Explore
+
+Once you're comfortable with the basics, try these advanced features:
+
+### Tool Calling
+
+If your model supports function calling (e.g., Qwen3, Llama 3.2), you can enable tools:
+
+1. Go to **Settings** → **Model Settings** → **Text Settings**
+2. Scroll to **Enabled Tools**
+3. Enable tools like Calculator, Date/Time, Device Info
+4. In chat, the model can now call tools automatically ("What's 15% of 240?", "What's the current date?")
+
+### Document Attachments
+
+Attach PDFs, code files, CSVs, and more:
+
+1. In any chat, tap the **paperclip** icon (📎)
+2. Choose **Attach Document**
+3. Select a file (PDF, .txt, .py, .json, etc.)
+4. Ask questions about the document's content
+
+### Projects (Custom System Prompts)
+
+Create reusable system prompts for different use cases:
+
+1. Go to **Settings** → **Projects**
+2. Tap **Create Project**
+3. Name your project (e.g., "Creative Writing Assistant")
+4. Write a system prompt (e.g., "You are a creative writing coach...")
+5. In any chat, select the project from the dropdown to apply the prompt
+
+### Import Your Own Models
+
+Bring your own `.gguf` files:
+
+1. Go to **Models** → **Text Models**
+2. Tap **Import Model**
+3. Select a `.gguf` file from your device storage
+4. The model will be copied to Off Grid's storage and appear in your model list
+
+## Performance Tuning
+
+If you experience slow generation or crashes, adjust these settings:
+
+**Settings → Model Settings → Text Settings:**
+
+- **Context Length**: Lower values (512-2048) use less RAM and are faster
+- **CPU Threads**: Increase to 6-8 for faster generation (if you have a flagship device)
+- **GPU Layers**: Start with 0, incrementally increase if stable (experimental on Android)
+- **Flash Attention**: Enable for faster inference (auto-disabled if GPU layers > 0)
+
+**Settings → Model Settings → Image Settings:**
+
+- **Steps**: Lower values (10-15) generate faster but lower quality
+- **Threads**: Increase to 4-8 for faster CPU generation
+- **Guidance Scale**: Lower values (5-7) can speed up generation
+
+<Warning>
+  **Memory Management**
+  
+  Off Grid monitors RAM usage and will warn you before loading models that exceed safe limits. If you see memory warnings:
+  - Unload the current model before loading a new one
+  - Use smaller models or lower quantizations (Q4_K_M or Q3_K_M)
+  - Close other apps to free up RAM
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Browse All Models" icon="magnifying-glass">
+    Explore the full model library with advanced filters (organization, size, quantization)
+  </Card>
+  <Card title="Model Settings" icon="sliders">
+    Fine-tune temperature, top-p, repeat penalty, and more
+  </Card>
+  <Card title="Storage Management" icon="hard-drive">
+    Monitor storage usage and delete unused models
+  </Card>
+  <Card title="Join the Community" icon="users" href="https://join.slack.com/t/off-grid-mobile/shared_invite/zt-3q7kj5gr6-rVzx5gl5LKPQh4mUE2CCvA">
+    Ask questions and share feedback on Slack
+  </Card>
+</CardGroup>
+
+---
+
+**You're all set!** Off Grid is now running entirely on your device. Enable airplane mode and keep chatting — everything works offline.

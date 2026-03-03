@@ -1,0 +1,535 @@
+---
+title: Android Implementation
+description: Native Android modules, hardware acceleration, and build configuration for Off Grid
+---
+
+## Overview
+
+Off Grid's Android implementation uses native Kotlin modules bridged to React Native via JNI. The platform leverages Qualcomm's QNN NPU for image generation, OpenCL for GPU-accelerated LLM inference, and Android's native APIs for PDF extraction and background downloads.
+
+## Native Modules
+
+### LocalDreamModule
+
+Manages Stable Diffusion inference on Android using the local-dream C++ library with MNN and QNN backends.
+
+**File:** `android/app/src/main/java/ai/offgridmobile/localdream/LocalDreamModule.kt`
+
+**Architecture:**
+- Spawns `libstable_diffusion_core.so` as a subprocess
+- Subprocess runs HTTP server on `localhost:18081`
+- TypeScript layer communicates via HTTP for generation requests
+- Module handles: process lifecycle, QNN library extraction, RGB→PNG conversion
+
+**Backend Selection:**
+
+<Tabs>
+  <Tab title="MNN (CPU)">
+    **All ARM64 devices**
+    
+    - Alibaba's MNN framework
+    - CPU-only inference
+    - Models use `.mnn` file extension (e.g., `unet.mnn`, `clip.mnn`, `vae_decoder.mnn`)
+    - Typical performance: ~15s for 512×512 @ 20 steps (Snapdragon 8 Gen 3)
+    
+    ```kotlin
+    // MNN command-line args (LocalDreamModule.kt:89-109)
+    mutableListOf(
+        executable.absolutePath,
+        "--clip", File(modelDir, "clip.mnn").absolutePath,
+        "--unet", File(modelDir, "unet.mnn").absolutePath,
+        "--vae_decoder", File(modelDir, "vae_decoder.mnn").absolutePath,
+        "--tokenizer", File(modelDir, "tokenizer.json").absolutePath,
+        "--port", SERVER_PORT.toString(),
+        "--text_embedding_size", "768",
+        "--cpu"
+    )
+    ```
+  </Tab>
+  
+  <Tab title="QNN (NPU)">
+    **Snapdragon 8 Gen 1+ devices**
+    
+    - Qualcomm AI Engine Direct (QNN)
+    - NPU acceleration via Hexagon DSP
+    - Models use `.bin` file extension (e.g., `unet.bin`, `vae_decoder.bin`)
+    - Typical performance: ~5-10s for 512×512 @ 20 steps (chipset-dependent)
+    - Requires QNN runtime libraries (extracted from APK assets at runtime)
+    
+    ```kotlin
+    // QNN command-line args (LocalDreamModule.kt:111-134)
+    mutableListOf(
+        executable.absolutePath,
+        "--clip", File(modelDir, "clip.bin").absolutePath,
+        "--unet", File(modelDir, "unet.bin").absolutePath,
+        "--vae_decoder", File(modelDir, "vae_decoder.bin").absolutePath,
+        "--tokenizer", File(modelDir, "tokenizer.json").absolutePath,
+        "--backend", File(runtimeDir, "libQnnHtp.so").absolutePath,
+        "--system_library", File(runtimeDir, "libQnnSystem.so").absolutePath,
+        "--port", SERVER_PORT.toString(),
+        "--text_embedding_size", "768"
+    )
+    ```
+  </Tab>
+</Tabs>
+
+**NPU Detection:**
+
+```kotlin
+// LocalDreamModule.kt:45-52
+internal fun isNpuSupportedInternal(): Boolean {
+    val soc = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        Build.SOC_MODEL
+    } else {
+        ""
+    }
+    return soc.startsWith("SM") || soc.startsWith("QCS") || soc.startsWith("QCM")
+}
+```
+
+Detects Qualcomm Snapdragon SoCs via `Build.SOC_MODEL` (API 31+). Examples: `SM8450` (8 Gen 1), `SM8550` (8 Gen 2), `SM8650` (8 Gen 3).
+
+**QNN Runtime Libraries:**
+
+Extracted from `assets/qnnlibs/` to app's `filesDir/runtime_libs/` on first load:
+
+- `libQnnHtp.so` — Main QNN HTP (Hexagon Tensor Processor) backend
+- `libQnnHtpV68.so` through `libQnnHtpV81.so` — Chipset-specific variants
+- `libQnnSystem.so` — System backend
+- Skel/Stub variants for FastRPC communication with DSP
+
+```kotlin
+// LocalDreamModule.kt:232-268
+private fun prepareRuntimeDir(): File {
+    val runtimeDir = File(reactApplicationContext.filesDir, RUNTIME_DIR).apply {
+        if (!exists()) mkdirs()
+    }
+
+    try {
+        val qnnLibs = reactApplicationContext.assets.list("qnnlibs")
+        qnnLibs?.forEach { fileName ->
+            val targetLib = File(runtimeDir, fileName)
+            // Copy from assets if missing or size mismatch
+            if (needsCopy) {
+                reactApplicationContext.assets.open("qnnlibs/$fileName").use { input ->
+                    targetLib.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+            }
+            targetLib.setReadable(true, true)
+            targetLib.setExecutable(true, true)
+        }
+    } catch (e: IOException) {
+        Log.w(TAG, "No QNN libraries found in assets (CPU-only mode): ${e.message}")
+    }
+
+    return runtimeDir
+}
+```
+
+**Environment Setup:**
+
+```kotlin
+// LocalDreamModule.kt:166-196
+internal fun buildEnvironment(runtimeDir: File): Map<String, String> {
+    val env = mutableMapOf<String, String>()
+
+    val systemLibPaths = mutableListOf(
+        runtimeDir.absolutePath,
+        "/system/lib64",
+        "/vendor/lib64",
+        "/vendor/lib64/egl"
+    )
+
+    // Auto-detect Mali GPU paths for ARM Mali devices
+    try {
+        val maliSymlink = File("/system/vendor/lib64/egl/libGLES_mali.so")
+        if (maliSymlink.exists()) {
+            val realPath = maliSymlink.canonicalPath
+            val soc = realPath.split("/").getOrNull(realPath.split("/").size - 2)
+            if (soc != null) {
+                listOf("/vendor/lib64/$soc", "/vendor/lib64/egl/$soc").forEach { path ->
+                    if (!systemLibPaths.contains(path)) systemLibPaths.add(path)
+                }
+            }
+        }
+    } catch (e: Exception) {
+        Log.w(TAG, "Failed to resolve Mali paths: ${e.message}")
+    }
+
+    env["LD_LIBRARY_PATH"] = systemLibPaths.joinToString(":")
+    env["DSP_LIBRARY_PATH"] = runtimeDir.absolutePath
+    env["ADSP_LIBRARY_PATH"] = runtimeDir.absolutePath
+
+    return env
+}
+```
+
+<Note>
+  Setting `DSP_LIBRARY_PATH` and `ADSP_LIBRARY_PATH` is critical for QNN to locate DSP firmware. Without these, QNN initialization fails with SELinux errors.
+</Note>
+
+**Image Generation Flow:**
+
+1. TypeScript calls `LocalDreamModule.generateImage(params)`
+2. Module checks server health (`http://127.0.0.1:18081/health`)
+3. Posts JSON request to `/generate` endpoint
+4. Server returns Server-Sent Events (SSE) stream
+5. Module parses SSE events:
+   - `progress` → emits `LocalDreamProgress` with step count and optional preview image
+   - `complete` → returns final base64 RGB image
+6. RGB data converted to PNG via `Bitmap.createBitmap()` and saved to `filesDir/generated_images/`
+
+```kotlin
+// LocalDreamModule.kt:138-164
+internal fun saveRgbToPng(base64Rgb: String, width: Int, height: Int, outputPath: String) {
+    val rgbBytes = Base64.decode(base64Rgb, Base64.DEFAULT)
+    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val pixels = IntArray(width * height)
+
+    for (i in 0 until width * height) {
+        val idx = i * 3
+        val r = rgbBytes[idx].toInt() and 0xFF
+        val g = rgbBytes[idx + 1].toInt() and 0xFF
+        val b = rgbBytes[idx + 2].toInt() and 0xFF
+        pixels[i] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+    }
+
+    bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
+
+    File(outputPath).parentFile?.mkdirs()
+    FileOutputStream(outputPath).use { out ->
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+    }
+    bitmap.recycle()
+}
+```
+
+### DownloadManager Module
+
+Handles background model downloads using Android's native `DownloadManager` API.
+
+**File:** `android/app/src/main/java/ai/offgridmobile/download/DownloadManagerModule.kt`
+
+**Features:**
+- Background downloads survive app kill and device reboot
+- Native notification with progress bar
+- Automatic retry on network interruption
+- Download state persisted in `SharedPreferences`
+- 500ms polling interval for progress updates
+
+**Key Methods:**
+
+<Tabs>
+  <Tab title="startDownload">
+    ```kotlin
+    @ReactMethod
+    fun startDownload(params: ReadableMap, promise: Promise) {
+        val url = params.getString("url") ?: throw IllegalArgumentException("URL is required")
+        val fileName = params.getString("fileName") ?: throw IllegalArgumentException("fileName is required")
+        val modelId = params.getString("modelId") ?: ""
+        val totalBytes = if (params.hasKey("totalBytes")) params.getDouble("totalBytes").toLong() else 0L
+
+        // Clean up existing file to prevent auto-rename (file.gguf → file-1.gguf)
+        val existingFile = File(
+            reactApplicationContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),
+            fileName
+        )
+        if (existingFile.exists()) existingFile.delete()
+
+        val request = DownloadManager.Request(Uri.parse(url))
+            .setTitle(fileName)
+            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            .setDestinationInExternalFilesDir(
+                reactApplicationContext,
+                Environment.DIRECTORY_DOWNLOADS,
+                fileName
+            )
+            .setAllowedOverMetered(true)
+            .setAllowedOverRoaming(true)
+
+        val downloadId = downloadManager.enqueue(request)
+
+        // Persist download info to SharedPreferences
+        val downloadInfo = JSONObject().apply {
+            put("downloadId", downloadId)
+            put("url", url)
+            put("fileName", fileName)
+            put("modelId", modelId)
+            put("totalBytes", totalBytes)
+            put("status", "pending")
+            put("startedAt", System.currentTimeMillis())
+        }
+        persistDownload(downloadId, downloadInfo)
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Progress Polling">
+    ```kotlin
+    private fun pollAllDownloads() {
+        val downloads = getAllPersistedDownloads()
+
+        for (i in 0 until downloads.length()) {
+            val download = downloads.getJSONObject(i)
+            val downloadId = download.getLong("downloadId")
+            val statusInfo = queryDownloadStatus(downloadId)
+            val status = statusInfo.getString("status")
+
+            when (status) {
+                "completed" -> {
+                    if (!completedEventSent) {
+                        sendEvent("DownloadComplete", eventParams)
+                        updateDownloadStatus(downloadId, "completed", localUri)
+                    }
+                }
+                "failed" -> {
+                    sendEvent("DownloadError", eventParams)
+                    removeDownload(downloadId)
+                }
+                "running", "pending" -> {
+                    sendEvent("DownloadProgress", eventParams)
+                }
+            }
+        }
+    }
+    ```
+    
+    Polls every 500ms when the app is active. Events emitted to React Native:
+    - `DownloadProgress` — bytes downloaded, total bytes, status
+    - `DownloadComplete` — final file URI
+    - `DownloadError` — error reason
+  </Tab>
+</Tabs>
+
+**Race Condition Fix:**
+
+```kotlin
+// DownloadManagerModule.kt:515-516
+if (status == "completed") {
+    info.put("completedAt", System.currentTimeMillis())
+    info.put("completedEventSent", true)  // Prevents duplicate events
+}
+```
+
+On slow emulators, download completion notification could arrive before React Native received the event. Fixed by tracking event delivery separately.
+
+### PdfExtractorModule
+
+Extracts text from PDF files using PdfiumAndroid (Chromium's PDF renderer).
+
+**File:** `android/app/src/main/java/ai/offgridmobile/pdf/PDFExtractorModule.kt`
+
+**Implementation:**
+
+```kotlin
+@ReactMethod
+fun extractText(filePath: String, maxChars: Double, promise: Promise) {
+    Thread {
+        try {
+            val file = File(filePath)
+            val limit = maxChars.toInt()
+            val core = PdfiumCore(reactApplicationContext)
+            val fd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+            val doc = core.newDocument(fd)
+            val pageCount = doc.getPageCount()
+            val sb = StringBuilder()
+
+            for (i in 0 until pageCount) {
+                val page = doc.openPage(i)
+                val textPage = page.openTextPage()
+                val charCount = textPage.textPageCountChars()
+                if (charCount > 0) {
+                    val text = textPage.textPageGetText(0, charCount)
+                    if (text != null) sb.append(text).append("\n\n")
+                }
+                textPage.close()
+                page.close()
+
+                if (sb.length >= limit) {
+                    sb.setLength(limit)
+                    sb.append("\n\n... [Extracted ${i + 1} of $pageCount pages]")
+                    break
+                }
+            }
+
+            doc.close()
+            fd.close()
+            promise.resolve(sb.toString())
+        } catch (e: Exception) {
+            promise.reject("PDF_ERROR", "Failed to extract text: ${e.message}", e)
+        }
+    }.start()
+}
+```
+
+**Dependency:**
+
+```gradle
+// android/app/build.gradle:149
+implementation("io.legere:pdfiumandroid:1.0.35")
+```
+
+PdfiumAndroid provides native bindings to Chromium's PDFium library (same engine as Chrome's PDF viewer).
+
+## Hardware Acceleration
+
+### OpenCL GPU Offloading (LLM Inference)
+
+Llama.cpp supports OpenCL GPU acceleration on Qualcomm Adreno GPUs via the `llama.rn` native module.
+
+**Configuration:**
+- User sets GPU layers (0-99) in model settings
+- llama.cpp offloads first N transformer layers to GPU
+- Remaining layers run on CPU
+- Automatic fallback to CPU if OpenCL initialization fails
+
+**Performance:**
+- Flagship devices (Adreno 740+): 20-40 tok/s with GPU layers
+- CPU-only: 15-30 tok/s (ARM NEON, i8mm, dotprod SIMD)
+
+<Warning>
+  OpenCL backend is experimental. Some devices may crash during layer offload initialization. Start with 0 GPU layers and incrementally increase while monitoring stability.
+</Warning>
+
+**Compatibility Notes:**
+- Flash attention automatically disabled when GPU layers > 0 (llama.cpp limitation)
+- Devices with ≤4GB RAM: GPU layers forced to 0 to prevent Metal/OpenCL `abort()` crashes
+
+### QNN NPU Acceleration (Image Generation)
+
+Qualcomm AI Engine Direct (QNN) accelerates Stable Diffusion inference on the Hexagon DSP (Neural Processing Unit).
+
+**Supported Chipsets:**
+- Snapdragon 8 Gen 1 (SM8450)
+- Snapdragon 8 Gen 2 (SM8550)
+- Snapdragon 8 Gen 3 (SM8650)
+- Snapdragon 8 Gen 4 (SM8750)
+- Snapdragon 8 Gen 5 (SM8850)
+
+**Model Variants:**
+- `min` — Non-flagship SoCs (8 Gen 1)
+- `8gen1` — 8 Gen 1 optimized
+- `8gen2` — 8 Gen 2/3/4/5 optimized (uses V75+ HTP)
+
+**QNN Architecture:**
+```
+User Space (Android App)
+  ↓
+libQnnHtp.so (QNN Backend)
+  ↓
+FastRPC (IPC to DSP)
+  ↓
+Hexagon DSP (cDSP)
+  ↓
+HTP Accelerator (Tensor ops)
+```
+
+**Performance Characteristics:**
+- QNN: ~5-10s for 512×512 @ 20 steps
+- MNN (CPU fallback): ~15s on same device
+- 2-3x speedup from NPU acceleration
+
+## Build Configuration
+
+### Gradle Build
+
+**File:** `android/app/build.gradle`
+
+```gradle
+android {
+    ndkVersion rootProject.ext.ndkVersion
+    compileSdk rootProject.ext.compileSdkVersion
+    
+    defaultConfig {
+        applicationId "ai.offgridmobile"
+        minSdkVersion 26  // Android 8.0 (for Build.SOC_MODEL in API 31)
+        targetSdkVersion 35
+    }
+    
+    packaging {
+        jniLibs {
+            // Force compressed .so storage so Play Store extracts libs to nativeLibraryDir
+            // as real filesystem files. Without this, exec() fails with EACCES (error=13)
+            // because you can't fork-exec from a zip entry.
+            useLegacyPackaging = true
+        }
+    }
+}
+
+dependencies {
+    // Coroutines for async operations (LocalDreamModule)
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    
+    // PDF text extraction (PDFExtractorModule)
+    implementation("io.legere:pdfiumandroid:1.0.35")
+}
+```
+
+### Native Libraries
+
+**Location:** `android/app/src/main/jniLibs/arm64-v8a/`
+
+- `libstable_diffusion_core.so` — local-dream Stable Diffusion inference engine
+
+**APK Assets:**
+
+- `assets/qnnlibs/` — QNN runtime libraries (19 files, ~50MB total)
+- `assets/ggml-hexagon/` — Optional GGML Hexagon backend for LLM inference
+
+**Build Output:**
+
+APK includes:
+- React Native Hermes bytecode bundle
+- Native Kotlin/Java bytecode
+- llama.rn ARM64 binaries (llama.cpp + OpenCL)
+- whisper.rn ARM64 binaries (whisper.cpp)
+- local-dream C++ library
+- QNN runtime libraries
+
+Typical APK size: ~150MB (after compression)
+
+## Performance Tuning
+
+### Image Generation
+
+**CPU Threads:**
+
+```kotlin
+// TypeScript → LocalDreamModule
+const params = {
+  prompt: "...",
+  steps: 20,
+  threads: 4  // Optimal for most devices
+}
+```
+
+MNN backend parallelizes UNet inference across CPU threads. Optimal thread count: 4-6 on octa-core SoCs.
+
+**QNN Cache Warmup:**
+
+First generation after model load takes 120s+ for QNN to build and cache the compute graph. Subsequent generations are 5-10s.
+
+### Download Management
+
+**Parallel Downloads:**
+
+Android's DownloadManager supports multiple concurrent downloads. Off Grid limits to 2 simultaneous downloads to prevent network saturation.
+
+**Network Policy:**
+
+```kotlin
+.setAllowedOverMetered(true)
+.setAllowedOverRoaming(true)
+```
+
+Downloads proceed over cellular data and roaming. Users can pause via notification.
+
+## References
+
+- **llama.cpp OpenCL:** `https://github.com/ggerganov/llama.cpp/blob/master/docs/backend/OpenCL.md`
+- **Qualcomm QNN:** `https://www.qualcomm.com/developer/software/qualcomm-ai-engine-direct`
+- **PdfiumAndroid:** `https://github.com/mshockwave/PdfiumAndroid`
+- **Android DownloadManager:** `https://developer.android.com/reference/android/app/DownloadManager`
+- **local-dream:** `https://github.com/xingchensong/local-dream` (MNN/QNN Stable Diffusion)

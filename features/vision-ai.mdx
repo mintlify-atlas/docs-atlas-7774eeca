@@ -1,0 +1,260 @@
+---
+title: Vision AI
+description: Analyze images, documents, and scenes with on-device multimodal models
+icon: eye
+---
+
+## Overview
+
+Vision AI brings multimodal understanding to Off Grid. Point your camera at anything — receipts, documents, photos, scenes — and ask questions. The model sees what you see and responds with detailed analysis, all processed entirely on your device.
+
+## What Can It Do?
+
+- **Document Analysis** — Extract text from receipts, invoices, forms, and contracts
+- **Scene Description** — Describe photos and images in detail
+- **Visual Q&A** — Ask questions about what's in an image
+- **OCR** — Read text from images, signs, and screenshots
+- **Object Recognition** — Identify objects, animals, plants, and more
+- **Multilingual** — Read and understand text in multiple languages (Qwen models)
+
+## Supported Models
+
+Off Grid supports vision-language models (VLMs) that combine image understanding with text generation:
+
+### SmolVLM (500M, 2.2B)
+
+- **Fastest** — 7-10s inference on flagship devices
+- **Compact** — 500M model is ~600MB total (including mmproj)
+- **Best for:** Quick document scans, receipt extraction, general scene description
+
+### Qwen3-VL (2B, 8B)
+
+- **Thinking mode** — Shows reasoning process before answering
+- **Multilingual** — Excellent understanding of non-English text
+- **Best for:** Complex visual reasoning, multilingual documents, detailed analysis
+
+### Gemma 3n E4B
+
+- **Multimodal** — Vision + audio support
+- **Mobile-optimized** — Selective activation for efficiency
+- **Best for:** Advanced use cases requiring multiple modalities
+
+### LLaVA
+
+- **General-purpose** — Large Language and Vision Assistant
+- **Best for:** Detailed image descriptions and visual conversations
+
+### MiniCPM-V
+
+- **Efficient** — Balanced speed and quality
+- **Best for:** Resource-constrained devices
+
+<Note>
+All vision models automatically download a **mmproj** (multimodal projector) companion file. This file is required for vision capabilities and is typically 200-400MB. Off Grid handles this automatically — you'll see combined progress during download.
+</Note>
+
+## How to Use
+
+### 1. Download a Vision Model
+
+1. Open **Models** → **Text Models**
+2. Filter by **Model Type** → **Vision**
+3. Select a vision model (SmolVLM-500M recommended for first-time users)
+4. Tap **Download** and wait for both the model and mmproj to download
+
+### 2. Load the Model
+
+1. Open a conversation
+2. Tap the model selector at the top
+3. Select your vision model
+4. Wait for it to load (takes 10-20 seconds for vision models)
+
+### 3. Add an Image
+
+There are two ways to add images:
+
+<Tabs>
+  <Tab title="Camera">
+    1. Tap the **camera icon** in the chat input
+    2. Take a photo of what you want to analyze
+    3. Review the photo and tap **Use Photo**
+    4. Type your question about the image
+    5. Send
+  </Tab>
+  
+  <Tab title="Photo Library">
+    1. Tap the **image icon** in the chat input
+    2. Select a photo from your library
+    3. Type your question about the image
+    4. Send
+  </Tab>
+</Tabs>
+
+### 4. Get Analysis
+
+The model processes the image and your question, then streams the response in real-time. For complex questions, you may see a **thinking indicator** (on models that support it) before the final answer.
+
+## Example Use Cases
+
+### Receipt Extraction
+
+**Photo:** Receipt from a restaurant
+
+**Prompt:** "Extract all line items and the total amount."
+
+**Response:** The model lists each item, price, and calculates the total.
+
+---
+
+### Document Q&A
+
+**Photo:** Screenshot of a contract
+
+**Prompt:** "What is the cancellation policy?"
+
+**Response:** The model reads the document and extracts the relevant clause.
+
+---
+
+### Scene Description
+
+**Photo:** Landscape photo
+
+**Prompt:** "Describe this scene in detail."
+
+**Response:** The model describes the setting, objects, colors, mood, and composition.
+
+---
+
+### Visual Reasoning
+
+**Photo:** Math problem on a whiteboard
+
+**Prompt:** "Solve this equation step by step."
+
+**Response:** The model reads the equation, shows its reasoning (thinking mode), and provides the solution.
+
+## Performance
+
+### Inference Times
+
+| Model | Device Class | Inference Time |
+|-------|--------------|----------------|
+| **SmolVLM 500M** | Flagship | ~7s |
+| **SmolVLM 500M** | Mid-range | ~15s |
+| **SmolVLM 2.2B** | Flagship | ~10-15s |
+| **SmolVLM 2.2B** | Mid-range | ~25-35s |
+| **Qwen3-VL 2B** | Flagship | ~10-20s |
+| **Qwen3-VL 8B** | Flagship (8GB+ RAM) | ~30-60s |
+
+<Note>
+Vision inference is slower than text-only generation because the model must process both the image and your question. The first inference after loading a vision model may take longer due to CLIP warmup.
+</Note>
+
+### Factors Affecting Speed
+
+- **Model size** — Larger models (2B+) are slower but more accurate
+- **Image resolution** — Higher resolution images take longer to process
+- **Question complexity** — Complex reasoning takes more time
+- **Device RAM** — More RAM allows faster processing
+
+## Technical Details
+
+### How It Works
+
+Vision models use a **multimodal projector (mmproj)** to bridge image and text understanding:
+
+1. **Image encoding** — Your photo is processed by a vision encoder (CLIP)
+2. **Projection** — Visual features are projected into the language model's embedding space
+3. **Joint reasoning** — The LLM reasons about both the image and your text prompt
+4. **Response generation** — Streams the answer just like text-only models
+
+### mmproj Files
+
+- **Automatically downloaded** — Off Grid detects when a model needs mmproj and downloads it
+- **Combined tracking** — Model size estimates include mmproj overhead
+- **Runtime discovery** — If mmproj wasn't linked during download, Off Grid searches the model directory on load
+- **Storage location** — Stored alongside the model file
+
+### OpenAI-Compatible Format
+
+Off Grid uses llama.rn's OpenAI-compatible message format for vision:
+
+```json
+{
+  "role": "user",
+  "content": [
+    { "type": "image_url", "image_url": { "url": "file:///path/to/image.jpg" } },
+    { "type": "text", "text": "What's in this image?" }
+  ]
+}
+```
+
+This allows seamless integration with llama.cpp's multimodal inference.
+
+### GPU Acceleration
+
+**iOS:**
+- CLIP GPU acceleration is **enabled by default** on devices with >4GB RAM
+- **Disabled automatically** on ≤4GB RAM devices to prevent crashes
+
+**Android:**
+- OpenCL GPU offloading available (experimental)
+- Configure via GPU layers setting
+
+<Warning>
+On devices with ≤4GB RAM (iPhone XS, older Androids), CLIP GPU is disabled to prevent `abort()` crashes during Metal buffer allocation. Vision models still work, just slower.
+</Warning>
+
+## Tips
+
+### Getting the Best Results
+
+1. **Clear, well-lit photos** — Better image quality = better understanding
+2. **Specific questions** — Ask exactly what you want to know
+3. **One question at a time** — Break complex queries into steps
+4. **Use thinking mode** — Qwen models show reasoning for complex questions
+
+### Choosing the Right Model
+
+- **Speed priority:** SmolVLM-500M
+- **Quality priority:** Qwen3-VL 2B or SmolVLM-2.2B
+- **Multilingual:** Qwen3-VL
+- **Advanced reasoning:** Qwen3-VL (thinking mode)
+
+### Memory Management
+
+Vision models require more RAM than text-only models:
+
+- **RAM estimate** = (model file size + mmproj size) × 1.5
+- SmolVLM-500M + mmproj ≈ 900MB RAM required
+- Qwen3-VL 2B + mmproj ≈ 3.5GB RAM required
+
+Off Grid checks available RAM before loading and warns if insufficient.
+
+### Troubleshooting
+
+**Vision inference is very slow:**
+- Try a smaller model (SmolVLM-500M)
+- Reduce image resolution before sending
+- Ensure you're on a flagship device for best performance
+
+**Model fails to load:**
+- Check if mmproj downloaded correctly (visible in download progress)
+- Verify sufficient RAM (see Settings → Device Info)
+- Try unloading the current model first
+
+**Inference hangs after prompt enhancement:**
+- This is a known issue — Off Grid explicitly resets LLM state after enhancement
+- If it still hangs, disable prompt enhancement in image generation settings
+
+## Privacy
+
+All vision inference happens **100% on-device**:
+
+- Your photos **never leave your device**
+- No cloud processing
+- No data collection
+- Works completely offline (after model download)
+
+You can enable airplane mode and use vision models indefinitely.

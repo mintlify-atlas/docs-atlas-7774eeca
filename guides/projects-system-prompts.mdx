@@ -1,0 +1,547 @@
+---
+title: Projects & System Prompts
+description: Customize AI behavior with projects in Off Grid
+---
+
+## What Are Projects?
+
+Projects in Off Grid are **custom system prompts** that define how the AI behaves in conversations. Each project can have:
+
+- **Custom system prompt** - Instructions that guide the AI's behavior
+- **Name and description** - Easy identification and organization
+- **Color icon** - Visual distinction in the UI
+- **Persistent behavior** - Project settings persist across conversations
+
+From `src/stores/projectStore.ts:4-16`, projects are defined as:
+
+```typescript
+interface Project {
+  id: string;
+  name: string;
+  description: string;
+  systemPrompt: string;
+  icon: string; // Color hex code
+  createdAt: string;
+  updatedAt: string;
+}
+```
+
+## Default Projects
+
+Off Grid includes four example projects to get you started:
+
+### 1. General Assistant
+
+**System Prompt** (from `src/stores/projectStore.ts:20-28`):
+```
+You are a helpful AI assistant running locally on the user's device.
+Be concise and helpful. Focus on providing accurate information and
+solving the user's problems efficiently.
+```
+
+**Use case**: Everyday tasks, Q&A, general assistance
+
+### 2. Spanish Learning
+
+**System Prompt** (from `src/stores/projectStore.ts:29-45`):
+```
+You are a patient Spanish tutor. Help the user practice their
+Spanish conversation skills.
+
+Guidelines:
+- Respond in Spanish, but provide English translations in parentheses
+  for difficult words
+- Gently correct any grammar or vocabulary mistakes the user makes
+- Explain corrections briefly
+- Adjust your complexity based on the user's apparent level
+- Encourage the user and make learning fun
+- When the user writes in English, respond in Spanish and encourage
+  them to try in Spanish
+```
+
+**Use case**: Language learning practice, conversation skills
+
+### 3. Code Review
+
+**System Prompt** (from `src/stores/projectStore.ts:46-63`):
+```
+You are an experienced software engineer reviewing code. When the
+user shares code:
+
+- Point out potential bugs, edge cases, or errors
+- Suggest improvements for readability and maintainability
+- Note any security concerns
+- Recommend best practices
+- Be constructive and explain your reasoning
+- If the code looks good, say so
+
+Keep feedback actionable and specific.
+```
+
+**Use case**: Code review, debugging, security audits
+
+### 4. Writing Helper
+
+**System Prompt** (from `src/stores/projectStore.ts:64-81`):
+```
+You are a skilled writing assistant. Help the user with:
+
+- Brainstorming ideas and outlines
+- Improving clarity and flow
+- Fixing grammar and punctuation
+- Adjusting tone (formal, casual, professional, etc.)
+- Making text more concise or more detailed as needed
+
+When editing, explain your changes. When brainstorming, offer
+multiple options.
+```
+
+**Use case**: Writing, editing, brainstorming
+
+## Creating Projects
+
+<Steps>
+  <Step title="Navigate to Projects Screen">
+    Settings → Projects → "Create New Project" button
+  </Step>
+  
+  <Step title="Enter Project Details">
+    - **Name**: Short, descriptive name (e.g., "Technical Writer")
+    - **Description**: What this project is for (e.g., "Help with technical documentation")
+    - **Icon Color**: Choose a color for visual distinction
+  </Step>
+  
+  <Step title="Write System Prompt">
+    Define how the AI should behave:
+    - Be specific about role and expertise
+    - Include guidelines and constraints
+    - Specify output format if needed
+    - Set tone and style expectations
+  </Step>
+  
+  <Step title="Save Project">
+    Tap "Save" - project is immediately available
+  </Step>
+</Steps>
+
+### System Prompt Best Practices
+
+<Tip>
+  **Be specific**: Instead of "You are helpful", say "You are a helpful Python tutor who explains concepts with code examples"
+  
+  **Use bullet points**: Break guidelines into clear, scannable bullets
+  
+  **Set constraints**: Define what the AI should NOT do (e.g., "Never write complete solutions, only hints")
+  
+  **Define output format**: Specify if you want numbered lists, code blocks, etc.
+  
+  **Adjust for model size**: Smaller models (1-3B) work better with simpler, more direct prompts
+</Tip>
+
+### Example System Prompts
+
+**Personal Journal Analyst**:
+```
+You are a thoughtful personal journal analyst. When the user shares
+journal entries:
+
+- Identify patterns in mood, behavior, or thoughts
+- Ask clarifying questions to deepen reflection
+- Suggest connections between entries
+- Remain non-judgmental and supportive
+- Respect privacy - never suggest sharing entries externally
+```
+
+**Recipe Adapter**:
+```
+You are a creative recipe adapter. Help users modify recipes by:
+
+- Suggesting ingredient substitutions (allergies, dietary restrictions)
+- Scaling recipes up or down
+- Adapting for different cooking methods (oven → air fryer, etc.)
+- Estimating cooking times for modifications
+- Explaining why substitutions work or don't work
+
+Keep suggestions practical and kitchen-tested.
+```
+
+**Meeting Notes Summarizer**:
+```
+You are a concise meeting notes summarizer. When given meeting notes:
+
+- Extract key decisions made
+- List action items with owners (if mentioned)
+- Identify unresolved questions
+- Highlight deadlines
+- Format as:
+  ## Decisions
+  ## Action Items
+  ## Open Questions
+  ## Next Steps
+
+Be brief and scannable.
+```
+
+## Use Cases
+
+From `ARCHITECTURE.md:816-877`, here are real-world use cases:
+
+### Code Review and Debugging
+
+**Scenario**: Developer needs code assistance without sharing proprietary code with cloud services.
+
+**Implementation**:
+- Download Qwen 3 Coder A3B or Phi-4 Mini (Q4_K_M)
+- Create "Code Review" project with system prompt
+- Paste code snippets, receive suggestions
+- All code stays on device
+
+**Benefits**: Security-sensitive environments, air-gapped development, competitive advantage protection.
+
+### Language Learning Practice
+
+**Scenario**: Language learner practices conversations without subscription or data harvesting.
+
+**Implementation**:
+- Download multilingual model (Qwen3, Command-R)
+- Create project: "You are a patient Spanish tutor..."
+- Voice input via Whisper for pronunciation practice
+- Text responses for grammar explanation
+
+**Advantages**: Unlimited practice, no usage limits, complete privacy.
+
+### Document Analysis with Vision
+
+**Scenario**: User needs to analyze receipts, invoices, or documents on the go without internet.
+
+**Implementation**:
+- Download SmolVLM-500M (vision model, ~600MB)
+- Create project: "You are a document analyzer. Extract key information..."
+- Capture document photo via camera
+- Send to model with prompt: "Extract all line items and totals"
+- Receive structured text response
+
+**Performance**: ~7s inference on flagship devices.
+
+### Writing and Editing
+
+**Scenario**: Writer needs help with brainstorming, editing, and tone adjustment.
+
+**Implementation**:
+- Download any capable text model (3B+ recommended)
+- Create "Writing Helper" project
+- Paste drafts, get suggestions
+- Iterate on feedback
+
+**Use cases**: Blog posts, emails, documentation, creative writing.
+
+## Switching Between Projects
+
+<Steps>
+  <Step title="Open Project Selector">
+    In chat screen, tap the project icon in the toolbar
+  </Step>
+  
+  <Step title="Browse Projects">
+    Scroll through available projects with descriptions
+  </Step>
+  
+  <Step title="Select Project">
+    Tap a project to activate it for the current conversation
+  </Step>
+  
+  <Step title="Continue Conversation">
+    AI behavior immediately changes to match the selected project's system prompt
+  </Step>
+</Steps>
+
+<Note>
+  Projects are **per-conversation**. You can have multiple conversations active simultaneously, each with different projects.
+</Note>
+
+## Project Persistence
+
+From `src/stores/projectStore.ts:83-147`:
+
+Projects are stored in Zustand with AsyncStorage persistence:
+
+```typescript
+export const useProjectStore = create<ProjectState>()()
+  persist(
+    (set, get) => ({ /* state */ }),
+    {
+      name: 'local-llm-project-storage',
+      storage: createJSONStorage(() => AsyncStorage),
+    }
+  )
+);
+```
+
+**Persistence behavior**:
+
+- ✅ **Survives app restarts** - Projects persist across app launches
+- ✅ **Automatic save** - Projects saved on create/update/delete
+- ✅ **Automatic rehydration** - Projects loaded on app launch
+- ✅ **Backup included** - Projects backed up with OS device backup (if enabled)
+
+**Available operations** (from `src/stores/projectStore.ts:7-16`):
+
+- `createProject()` - Create new project with auto-generated ID and timestamps
+- `updateProject()` - Update existing project (auto-updates `updatedAt` timestamp)
+- `deleteProject()` - Delete project by ID
+- `getProject()` - Retrieve project by ID
+- `duplicateProject()` - Clone existing project with "(Copy)" suffix
+
+## Managing Projects
+
+### Editing a Project
+
+<Steps>
+  <Step title="Navigate to Projects">
+    Settings → Projects
+  </Step>
+  
+  <Step title="Tap Project to Edit">
+    Select the project you want to modify
+  </Step>
+  
+  <Step title="Update Fields">
+    Edit name, description, system prompt, or icon color
+  </Step>
+  
+  <Step title="Save Changes">
+    Tap "Save" - changes take effect immediately in all conversations using this project
+  </Step>
+</Steps>
+
+<Note>
+  When you update a project, the change affects **all future messages** in conversations using that project. Previous messages remain unchanged.
+</Note>
+
+### Duplicating a Project
+
+From `src/stores/projectStore.ts:123-140`:
+
+<Steps>
+  <Step title="Open Project Details">
+    Navigate to the project you want to duplicate
+  </Step>
+  
+  <Step title="Tap Duplicate">
+    Use the duplicate action (icon or menu option)
+  </Step>
+  
+  <Step title="Project Cloned">
+    A copy is created with:
+    - Same system prompt, description, and icon
+    - Name suffixed with "(Copy)"
+    - New unique ID and timestamps
+  </Step>
+  
+  <Step title="Edit the Copy">
+    Modify the duplicated project as needed
+  </Step>
+</Steps>
+
+<Tip>
+  Use duplication to create variations of a project. For example, duplicate "Code Review" to create "Code Review (Strict)" with more rigorous guidelines.
+</Tip>
+
+### Deleting a Project
+
+<Steps>
+  <Step title="Navigate to Project">
+    Settings → Projects → Select project
+  </Step>
+  
+  <Step title="Tap Delete">
+    Use the delete action (usually a trash icon)
+  </Step>
+  
+  <Step title="Confirm Deletion">
+    Confirm the deletion dialog
+  </Step>
+  
+  <Step title="Project Removed">
+    Project is permanently deleted from storage
+  </Step>
+</Steps>
+
+<Warning>
+  Deleting a project does NOT delete conversations that used that project. Existing conversations retain their system prompt, but future messages in those conversations will use the default system prompt.
+</Warning>
+
+## Advanced Project Patterns
+
+### Multi-Turn Task Templates
+
+Create projects that guide multi-step workflows:
+
+```
+You are a systematic problem solver. For every problem:
+
+1. Restate the problem in your own words
+2. Identify known constraints and assumptions
+3. Propose 2-3 potential approaches
+4. Recommend the best approach with reasoning
+5. Break it into concrete next steps
+
+Never skip steps. Always show your reasoning.
+```
+
+### Output Format Enforcement
+
+Force consistent output structure:
+
+```
+You are a structured information extractor. Always respond in this format:
+
+**Key Points**:
+- Bullet list of main takeaways
+
+**Details**:
+- Supporting information
+
+**Questions**:
+- Any clarifications needed
+
+Never deviate from this format.
+```
+
+### Personality Customization
+
+Define specific communication styles:
+
+```
+You are a concise technical advisor. Communication style:
+
+- Use bullet points over paragraphs
+- Lead with the conclusion, then explain
+- Avoid pleasantries and filler words
+- Use technical jargon when precise
+- Cite specific line numbers when reviewing code
+
+Value brevity and precision above all.
+```
+
+### Domain Expertise Simulation
+
+Create expert personas:
+
+```
+You are a senior DevOps engineer with 10 years experience in Kubernetes,
+Terraform, and AWS. When answering questions:
+
+- Reference real-world production patterns
+- Highlight common pitfalls and gotchas
+- Suggest monitoring and alerting approaches
+- Consider cost implications
+- Mention security best practices
+
+Assume the user has intermediate knowledge.
+```
+
+## Project Limitations
+
+### Model Size Constraints
+
+Smaller models (0.5B-3B parameters) may struggle with:
+
+- Complex multi-step instructions
+- Nuanced tone requirements
+- Strict output format adherence
+- Deep domain expertise simulation
+
+<Tip>
+  **For smaller models**: Keep system prompts simple, direct, and focused on a single behavior pattern.
+  
+  **For larger models (7B+)**: You can use more complex, multi-part system prompts with detailed guidelines.
+</Tip>
+
+### System Prompt Length
+
+Very long system prompts consume context window space:
+
+- Short prompt (50 tokens): Minimal impact
+- Medium prompt (200 tokens): Moderate impact
+- Long prompt (500+ tokens): Significant context reduction
+
+<Note>
+  If you have a 2048 token context window and a 500 token system prompt, you only have ~1500 tokens left for conversation history and responses.
+</Note>
+
+### Project Scope
+
+Projects affect **system prompt only**. They do NOT control:
+
+- Model selection (choose model separately)
+- Generation parameters (temperature, max tokens, etc.)
+- Tools availability (configured in settings)
+- Image generation behavior
+
+## Best Practices Summary
+
+### Effective System Prompts
+
+✅ **Be specific** about role and expertise
+
+✅ **Use structured guidelines** (bullets, numbered lists)
+
+✅ **Define success criteria** (what good output looks like)
+
+✅ **Set constraints** (what NOT to do)
+
+✅ **Specify output format** if consistency matters
+
+✅ **Test with your target model** (smaller models need simpler prompts)
+
+### Project Organization
+
+✅ **Use descriptive names** ("Code Review (Python)" vs "Project 1")
+
+✅ **Write clear descriptions** (future you will thank you)
+
+✅ **Choose distinct icon colors** (visual scanning)
+
+✅ **Duplicate for variations** (don't recreate from scratch)
+
+✅ **Delete unused projects** (reduce clutter)
+
+### Performance Considerations
+
+✅ **Keep prompts concise** for smaller models
+
+✅ **Test prompt effectiveness** with sample conversations
+
+✅ **Monitor context usage** (Settings → Device Info)
+
+✅ **Adjust model size** if needed (larger models handle complex prompts better)
+
+## Troubleshooting
+
+### AI Not Following System Prompt
+
+1. **Simplify the prompt** - Try shorter, more direct instructions
+2. **Use a larger model** - Smaller models struggle with complex prompts
+3. **Be more explicit** - Spell out every expectation
+4. **Test incrementally** - Add guidelines one at a time to find what works
+
+### System Prompt Too Long
+
+1. **Reduce to essentials** - Cut unnecessary examples and explanations
+2. **Use bullet points** - More concise than paragraphs
+3. **Increase context length** - Settings → Model Settings → Context Length
+4. **Split into multiple projects** - Create focused projects for different tasks
+
+### Inconsistent Output Format
+
+1. **Use explicit templates** - Show the exact format in the system prompt
+2. **Repeat format instructions** - Say "Always use this format" or "Never deviate"
+3. **Test with larger model** - Better instruction following
+4. **Add format enforcement** - Start responses with format markers
+
+## Additional Resources
+
+- **Store Implementation**: See `src/stores/projectStore.ts` for complete project state management
+- **Default Projects**: See `src/stores/projectStore.ts:18-81` for example system prompts
+- **Use Cases**: Review `ARCHITECTURE.md:816-877` for real-world scenarios

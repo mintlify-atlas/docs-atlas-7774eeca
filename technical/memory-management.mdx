@@ -1,0 +1,457 @@
+---
+title: Memory Management
+description: RAM budget calculation, memory estimates, pre-load checks, and runtime safeguards for optimal model performance
+---
+
+## Overview
+
+Off Grid uses aggressive memory management to prevent crashes and ensure smooth operation on mobile devices with limited RAM. The system calculates memory budgets, estimates model memory usage, and enforces runtime safeguards before loading models.
+
+<Warning>
+Exceeding device RAM limits can cause app crashes, system instability, or out-of-memory errors. Always respect memory warnings and recommendations.
+</Warning>
+
+---
+
+## Memory Budget Calculation
+
+Off Grid uses a **60% safe limit** of total device RAM as the maximum budget for AI models.
+
+### Budget Formula
+
+```typescript
+const totalDeviceRAM = await DeviceInfo.getTotalMemory(); // bytes
+const memoryBudget = totalDeviceRAM * 0.60; // 60% of total RAM
+```
+
+### Warning Thresholds
+
+| Threshold | Status | UI Indicator | Action |
+|-----------|--------|--------------|--------|
+| < 50% | Safe | Green/None | Model loads normally |
+| 50-60% | Warning | Yellow warning | Model loads with warning message |
+| ≥ 60% | Critical | Red error | Model load blocked |
+
+<Note>
+The 60% limit accounts for OS overhead, background processes, and React Native's JavaScript runtime. Exceeding this limit risks system memory pressure and app termination.
+</Note>
+
+### Example Budget by Device
+
+| Device RAM | Safe Budget (60%) | Typical Use |
+|------------|-------------------|-------------|
+| 4GB | ~2.4GB | Qwen3 0.6B Q4_K_M, SmolLM3 135M |
+| 6GB | ~3.6GB | Llama 3.2 3B Q4_K_M, Qwen3 1.6B |
+| 8GB | ~4.8GB | Qwen3 7B Q4_K_M, Llama 3.2 3B Q6_K |
+| 12GB | ~7.2GB | Qwen3 14B Q4_K_M, Llama 3.3 8B Q5_K_M |
+| 16GB | ~9.6GB | Qwen3 14B Q8_0, Llama 3.3 8B Q8_0 |
+
+---
+
+## Model Memory Estimates
+
+Before loading a model, the system estimates total RAM usage based on model type and file size.
+
+### Text Models
+
+**Formula:**
+```typescript
+requiredRAM = fileSize × 1.5
+```
+
+**Overhead includes:**
+- Model weights loaded into memory
+- KV (key-value) cache for context window
+- Activations during inference
+- llama.cpp runtime buffers
+
+**Example:**
+- Qwen3 0.6B Q4_K_M: 395 MB × 1.5 = **~593 MB**
+- Llama 3.2 3B Q4_K_M: 2.0 GB × 1.5 = **~3.0 GB**
+- Qwen3 7B Q4_K_M: 4.0 GB × 1.5 = **~6.0 GB**
+
+### Vision Models
+
+**Formula:**
+```typescript
+requiredRAM = (modelFileSize + mmProjSize) × 1.5
+```
+
+**Vision models require:**
+- Main GGUF model file
+- mmproj (multimodal projector) companion file
+- Combined size × 1.5 for overhead
+
+**Example:**
+- SmolVLM 500M:
+  - Model: 475 MB
+  - mmproj: 125 MB
+  - Total: (475 + 125) × 1.5 = **~900 MB**
+
+- Qwen3-VL 2B:
+  - Model: 1.2 GB
+  - mmproj: 350 MB
+  - Total: (1.2 + 0.35) × 1.5 = **~2.3 GB**
+
+<Tip>
+Vision models automatically download required mmproj files. If mmproj wasn't linked during download, the system searches the model directory at load time.
+</Tip>
+
+### Image Generation Models
+
+**Formula:**
+```typescript
+requiredRAM = fileSize × 1.8
+```
+
+**Overhead includes:**
+- Model weights (UNet, VAE, text encoder)
+- MNN/QNN runtime allocations
+- Intermediate tensors during denoising
+- Image preview buffers
+
+**Example:**
+- SD 1.5 Palettized (iOS): 1.0 GB × 1.8 = **~1.8 GB**
+- Anything V5 MNN (Android): 1.2 GB × 1.8 = **~2.2 GB**
+- SD 1.5 Full (iOS): 4.0 GB × 1.8 = **~7.2 GB**
+
+<Warning>
+Image generation models have higher overhead (1.8x) due to MNN/QNN runtime and intermediate tensor storage. Full-precision Core ML models (~4GB) require flagship devices with 8GB+ RAM.
+</Warning>
+
+---
+
+## Pre-Load Memory Checks
+
+Before loading any model, the system performs RAM validation.
+
+### Check Process
+
+```typescript
+// 1. Get device memory info
+const deviceInfo = await hardwareService.getDeviceInfo();
+const totalRAM = deviceInfo.totalMemory / (1024 ** 3); // Convert to GB
+const memoryBudget = totalRAM * 0.60;
+
+// 2. Estimate model RAM requirement
+const model = getModelById(modelId);
+const requiredRAM = estimateModelMemory(model, modelType);
+
+// 3. Check if currently loaded models fit with new model
+const currentlyLoaded = getCurrentlyLoadedMemory();
+const totalRequired = requiredRAM + currentlyLoaded;
+
+// 4. Compare against budget
+if (totalRequired > memoryBudget) {
+  return {
+    canLoad: false,
+    severity: 'critical',
+    message: `Cannot load ${model.name} (~${requiredRAM.toFixed(1)}GB required) - would exceed device safe limit of ${memoryBudget.toFixed(1)}GB. Unload current model or choose smaller.`
+  };
+}
+```
+
+### Memory Check Results
+
+| Status | Severity | Action | Example Message |
+|--------|----------|--------|------------------|
+| Can load safely | `none` | Proceed | Model loads without warning |
+| Can load with warning | `warning` | Proceed with caution | "Model will use 55% of available RAM" |
+| Cannot load | `critical` | Block load | "Cannot load Qwen3-7B-Q4_K_M (~5.5GB required) - would exceed device safe limit of 4.8GB" |
+
+<Note>
+Pre-load checks prevent out-of-memory crashes by blocking loads that would exceed the 60% RAM budget. Users must unload the current model or choose a smaller model.
+</Note>
+
+---
+
+## RAM-Aware Runtime Safeguards
+
+On low-RAM devices, llama.cpp and CLIP can call `abort()` during Metal/OpenCL GPU allocation, bypassing JavaScript error handling and crashing the app instantly. To prevent this, the system applies device-RAM-based caps **before any native call**.
+
+### Device-Specific Caps
+
+| Device RAM | GPU Layers | Context Cap | CLIP GPU | Rationale |
+|------------|------------|-------------|----------|----------|
+| ≤4GB | 0 (CPU-only) | 2048 | Off | Prevent Metal/OpenCL `abort()` crashes |
+| 4-6GB | Requested | 2048 | On | Limited headroom for GPU buffers |
+| 6-8GB | Requested | 4096 | On | Sufficient RAM for moderate contexts |
+| >8GB | Requested | 8192 | On | Full feature set available |
+
+### Implementation
+
+**GPU Layer Override:**
+```typescript
+// src/services/llmHelpers.ts
+export function getGpuLayersForDevice(
+  totalMemoryBytes: number,
+  requestedLayers: number
+): number {
+  const totalGB = totalMemoryBytes / (1024 ** 3);
+  
+  // Force CPU-only on ≤4GB devices (prevent Metal abort)
+  if (totalGB <= 4) {
+    return 0;
+  }
+  
+  return requestedLayers;
+}
+```
+
+**Context Length Cap:**
+```typescript
+// src/services/llmHelpers.ts
+export function getMaxContextForDevice(
+  totalMemoryBytes: number
+): number {
+  const totalGB = totalMemoryBytes / (1024 ** 3);
+  
+  if (totalGB <= 4) return 2048;
+  if (totalGB <= 6) return 2048;
+  if (totalGB <= 8) return 4096;
+  return 8192;
+}
+```
+
+**CLIP GPU Override:**
+```typescript
+// Vision models disable CLIP GPU on ≤4GB devices
+const useGpuForClip = totalMemoryGB > 4;
+
+await llmService.initializeMultimodal({
+  modelPath,
+  mmProjPath,
+  useGpuForClip // false on ≤4GB devices
+});
+```
+
+<Warning>
+**Critical for iOS devices with ≤4GB RAM (iPhone XS, iPhone 8):** Metal GPU allocation can call `abort()` before JavaScript catches the error, killing the app instantly. GPU layers are automatically forced to 0 on these devices.
+</Warning>
+
+### Why These Safeguards Matter
+
+**Without safeguards:**
+- iPhone XS (4GB RAM) attempts Metal GPU allocation
+- Metal buffer allocation fails, calls `abort()`
+- POSIX signal bypasses JavaScript try/catch
+- App terminates immediately with SIGABRT
+
+**With safeguards:**
+- System detects 4GB RAM before native call
+- GPU layers forced to 0 (CPU-only mode)
+- Context length capped at 2048
+- CLIP GPU disabled
+- App runs stably without crashes
+
+<Tip>
+These runtime caps are applied automatically. Users on low-RAM devices will see GPU options disabled in settings with explanatory messages.
+</Tip>
+
+---
+
+## Memory Monitoring
+
+The hardware service provides real-time memory tracking.
+
+### Get Current Memory Usage
+
+```typescript
+import { hardwareService } from '../services/hardware';
+
+// Get app-specific memory usage
+const memoryUsage = await hardwareService.getAppMemoryUsage();
+console.log('Used:', memoryUsage.used / (1024 ** 3), 'GB');
+console.log('Available:', memoryUsage.available / (1024 ** 3), 'GB');
+console.log('Total:', memoryUsage.total / (1024 ** 3), 'GB');
+
+// Refresh memory info (force fresh fetch)
+const deviceInfo = await hardwareService.refreshMemoryInfo();
+console.log('Available RAM:', deviceInfo.availableMemory);
+```
+
+### Model Memory Helpers
+
+```typescript
+// Get combined size (model + mmproj for vision models)
+const totalSize = hardwareService.getModelTotalSize(model);
+
+// Format for display
+const sizeString = hardwareService.formatModelSize(model); // "1.2 GB"
+
+// Estimate RAM usage
+const ramEstimate = hardwareService.estimateModelRam(model, 1.5);
+const ramString = hardwareService.formatModelRam(model, 1.5); // "~1.8 GB"
+```
+
+<Note>
+Memory monitoring uses `react-native-device-info` for system-level memory stats. Native allocations (llama.cpp, MNN/QNN) may not be fully reflected immediately in JavaScript layer.
+</Note>
+
+---
+
+## User-Friendly Error Messages
+
+When memory checks fail, the system provides actionable error messages.
+
+### Example Messages
+
+**Critical (blocked load):**
+```
+Cannot load Qwen3-7B-Q4_K_M (~5.5GB required) - would exceed
+device safe limit of 4.8GB. Unload current model or choose smaller.
+```
+
+**Warning (allowed but cautioned):**
+```
+Loading Llama 3.2 3B Q4_K_M will use ~3.0GB (~55% of available RAM).
+Performance may degrade if other apps are running.
+```
+
+**Low-RAM device advisory:**
+```
+Your device has limited memory (4GB). Only the smallest models will
+work well. GPU acceleration disabled automatically for stability.
+```
+
+**Emulator warning:**
+```
+Running in emulator. Performance may be significantly slower than
+real device. Memory estimates may be inaccurate.
+```
+
+---
+
+## Best Practices
+
+### 1. Choose Models Based on Device RAM
+
+- **4GB RAM**: Qwen3 0.6B, SmolLM3 135M (Q2_K, Q3_K_M)
+- **6GB RAM**: Llama 3.2 3B, Qwen3 1.6B (Q4_K_M)
+- **8GB RAM**: Qwen3 7B, Llama 3.2 3B (Q4_K_M, Q5_K_M)
+- **12GB+ RAM**: Qwen3 14B, Llama 3.3 8B (Q5_K_M, Q6_K, Q8_0)
+
+### 2. Unload Models When Switching
+
+Always unload the current model before loading a new one to free RAM:
+
+```typescript
+await activeModelService.unloadTextModel();
+await activeModelService.loadTextModel(newModelId);
+```
+
+### 3. Monitor Memory During Development
+
+Use the DeviceInfoScreen to check real-time memory usage:
+- Total RAM
+- Used RAM
+- Available RAM
+- Current model memory estimate
+
+### 4. Test on Low-RAM Devices
+
+Always test new features on devices with 4-6GB RAM to ensure safeguards work correctly.
+
+### 5. Respect Warning Thresholds
+
+If a model triggers a 50-60% warning:
+- Close background apps
+- Reduce context length
+- Consider smaller quantization
+- Monitor for performance degradation
+
+---
+
+## Memory Overhead Breakdown
+
+### Text Model Overhead (1.5x multiplier)
+
+| Component | Percentage | Purpose |
+|-----------|------------|----------|
+| Model weights | ~67% | GGUF file loaded in RAM |
+| KV cache | ~20% | Context window storage |
+| Activations | ~8% | Intermediate layer outputs |
+| Runtime buffers | ~5% | llama.cpp allocations |
+
+### Image Model Overhead (1.8x multiplier)
+
+| Component | Percentage | Purpose |
+|-----------|------------|----------|
+| Model weights | ~56% | UNet, VAE, text encoder |
+| MNN/QNN runtime | ~25% | Framework allocations |
+| Intermediate tensors | ~15% | Denoising step buffers |
+| Preview buffers | ~4% | Progressive image display |
+
+### Vision Model Overhead (1.5x multiplier)
+
+| Component | Percentage | Purpose |
+|-----------|------------|----------|
+| Model weights | ~50% | Main GGUF file |
+| mmproj weights | ~17% | Multimodal projector |
+| KV cache | ~20% | Context window |
+| Image embeddings | ~8% | CLIP encodings |
+| Runtime buffers | ~5% | llama.cpp allocations |
+
+<Tip>
+These overhead estimates are conservative to prevent out-of-memory crashes. Actual memory usage may be slightly lower depending on model architecture and settings.
+</Tip>
+
+---
+
+## Troubleshooting Memory Issues
+
+### App Crashes on Model Load
+
+**Symptoms:** App terminates immediately when loading a model
+
+**Causes:**
+- Model exceeds device RAM budget
+- GPU allocation failure on low-RAM device
+- Corrupted model file
+
+**Solutions:**
+1. Check RAM budget: `deviceRAM × 0.60 > estimatedModelRAM`
+2. Disable GPU offloading (set layers to 0)
+3. Re-download model file
+4. Choose smaller model or lower quantization
+
+### Slow Performance After Loading Model
+
+**Symptoms:** App becomes sluggish, inference is very slow
+
+**Causes:**
+- Model using 50-60% of RAM (memory pressure)
+- System swapping memory to disk
+- Thermal throttling
+
+**Solutions:**
+1. Close background apps
+2. Reduce context length (2048 → 512)
+3. Choose smaller model
+4. Wait for device to cool down
+
+### "Cannot Load Model" Error
+
+**Symptoms:** Red error message, load blocked
+
+**Causes:**
+- Estimated RAM usage exceeds 60% budget
+- Another model already loaded
+
+**Solutions:**
+1. Unload current model first
+2. Choose smaller model or lower quantization
+3. Close other apps to free system RAM
+
+### Vision Model Missing mmproj
+
+**Symptoms:** Vision model fails to load, mmproj not found
+
+**Causes:**
+- mmproj file not downloaded
+- mmproj file in wrong directory
+
+**Solutions:**
+1. System automatically searches model directory for mmproj
+2. Re-download model (automatic mmproj download)
+3. Manually place mmproj file in same directory as model GGUF

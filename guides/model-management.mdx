@@ -1,0 +1,324 @@
+---
+title: Model Management
+description: Download, import, and manage AI models in Off Grid
+---
+
+## Overview
+
+Off Grid supports multiple types of AI models that run entirely on your device:
+
+- **Text models** - GGUF format models for chat and text generation (from HuggingFace)
+- **Vision models** - Multimodal models with automatic mmproj file handling
+- **Image models** - Stable Diffusion models (MNN/QNN on Android, Core ML on iOS)
+- **Local imports** - Bring Your Own Model (BYOM) from device storage
+
+## Browsing and Discovering Models
+
+### HuggingFace Integration
+
+Off Grid integrates with HuggingFace to help you discover compatible models:
+
+<Steps>
+  <Step title="Open Models Screen">
+    Navigate to the Models tab to browse available models
+  </Step>
+  
+  <Step title="View Recommendations">
+    See curated recommended models filtered by your device's RAM capacity
+  </Step>
+  
+  <Step title="Use Advanced Filters">
+    Filter by:
+    - **Organization** - Qwen, Meta, Google, Microsoft, Mistral, DeepSeek, HuggingFace, NVIDIA
+    - **Size category** - Tiny, Small, Medium, Large
+    - **Quantization level** - Q2_K, Q3_K_M, Q4_K_M, Q5_K_M, Q6_K, Q8_0
+    - **Model type** - Text, Vision, Code
+    - **Credibility** - Official, Verified, Community badges
+  </Step>
+</Steps>
+
+<Note>
+  Models are automatically filtered based on your device's available RAM. For example, if you have 6GB of RAM, only models that fit within ~60% of that limit (3.6GB) will be shown.
+</Note>
+
+### RAM Compatibility Checks
+
+Before downloading, Off Grid calculates memory requirements:
+
+- **Text models**: File size × 1.5 (for KV cache and activations)
+- **Vision models**: (Model size + mmproj size) × 1.5
+- **Image models**: File size × 1.8 (for MNN/QNN runtime overhead)
+
+<Warning>
+  If a model would exceed 60% of your device's RAM, downloads will be blocked with a clear error message explaining which smaller model to choose instead.
+</Warning>
+
+## Downloading Models
+
+### Background Downloads
+
+All model downloads happen in the background using the native platform download manager:
+
+<Steps>
+  <Step title="Select a Model">
+    Tap a model card to view details and size information
+  </Step>
+  
+  <Step title="Start Download">
+    Tap "Download" - the download begins immediately
+  </Step>
+  
+  <Step title="Continue Using the App">
+    Downloads continue even if you:
+    - Switch to another screen
+    - Put the app in the background
+    - Close the app completely
+  </Step>
+  
+  <Step title="Track Progress">
+    View download progress in:
+    - Download Manager screen (list of all active downloads)
+    - Native system notifications
+    - Model card progress indicators
+  </Step>
+</Steps>
+
+<Tip>
+  **Android**: Uses native `DownloadManager` with system notifications. Downloads survive app restarts.
+  
+  **iOS**: Uses RNFS/URLSession for reliable background transfers.
+</Tip>
+
+### Vision Model Downloads
+
+Vision models require two files:
+
+1. **Main GGUF file** - The language model
+2. **mmproj file** - Multimodal projector for image understanding
+
+Off Grid handles this automatically:
+
+- Both files download in parallel
+- Progress shows combined download status
+- Model size estimates include both files
+- If mmproj download fails, it's automatically retried on next load
+
+<Note>
+  Supported vision models include SmolVLM (500M, 2.2B), Qwen3-VL (2B, 8B), Gemma 3n E4B, LLaVA, and MiniCPM-V.
+</Note>
+
+### Storage Pre-Check
+
+Before starting a download:
+
+- Available storage is checked
+- If insufficient space, download is blocked
+- Clear error message shows how much space is needed
+
+## Importing Local GGUF Files
+
+### Bring Your Own Model (BYOM)
+
+You can import `.gguf` files directly from your device storage:
+
+<Steps>
+  <Step title="Open Import Dialog">
+    Tap "Import Local Model" in the Models screen
+  </Step>
+  
+  <Step title="Select GGUF File">
+    Use the native file picker to browse your device and select a `.gguf` file
+  </Step>
+  
+  <Step title="Wait for Import">
+    The file is copied to Off Grid's internal storage with progress tracking
+  </Step>
+  
+  <Step title="Use Immediately">
+    Imported models appear alongside downloaded models in the model selector
+  </Step>
+</Steps>
+
+**What happens during import:**
+
+- File format is validated (must be valid GGUF)
+- Model name and quantization are parsed from filename
+- Android `content://` URIs are handled automatically
+- File is copied to app's internal storage for security
+
+<Tip>
+  This is perfect for:
+  - Custom fine-tuned models from your computer
+  - Models downloaded outside the app
+  - Testing unreleased or experimental models
+  - Using models from alternative sources
+</Tip>
+
+## Storage Management
+
+### Viewing Storage Usage
+
+Access the Storage Settings screen to see:
+
+- Total models storage used
+- Breakdown by model type (text, vision, image)
+- Individual model sizes with mmproj overhead
+- Available device storage
+
+### Orphaned Files Cleanup
+
+Over time, interrupted downloads or deleted models can leave orphaned files:
+
+**Orphaned GGUF files**: GGUF files in the models directory not tracked in the app's database
+
+**Orphaned image model directories**: Image model folders from incomplete or failed downloads
+
+<Steps>
+  <Step title="Scan for Orphans">
+    Navigate to Storage Settings → "Scan for Orphaned Files"
+  </Step>
+  
+  <Step title="Review Detected Files">
+    See list of untracked files with sizes
+  </Step>
+  
+  <Step title="Delete Selected Items">
+    Bulk delete orphaned files to reclaim storage
+  </Step>
+</Steps>
+
+<Warning>
+  Always review the list before deleting. If you recently imported a model manually, it might appear as orphaned until you restart the app.
+</Warning>
+
+### Stale Download Cleanup
+
+Failed or interrupted downloads are automatically detected and can be cleaned up:
+
+- Invalid entries from crashes during download
+- Partially downloaded files that can't be resumed
+- Download metadata that no longer matches files on disk
+
+These are cleared automatically on app restart or can be manually triggered from Storage Settings.
+
+## Vision Model Handling
+
+### Automatic mmproj Detection
+
+Vision models require a companion mmproj (multimodal projector) file:
+
+**During download:**
+- mmproj file is automatically downloaded alongside the main model
+- Both files tracked as a single logical unit
+- Combined size shown in model card
+
+**During model load:**
+- If mmproj wasn't linked during download, Off Grid searches the model directory
+- Runtime discovery finds mmproj files that match the model
+- Multimodal initialization happens automatically
+
+**Storage tracking:**
+- `isVisionModel` flag marks models requiring mmproj
+- `mmProjPath` and `mmProjFileSize` stored in model metadata
+- Total RAM estimate = (modelFileSize + mmProjFileSize) × 1.5
+
+Refer to `src/stores/appStore.ts:519-526` for the vision model structure.
+
+## Deleting Models
+
+### Safe Model Deletion
+
+<Steps>
+  <Step title="Select Model to Delete">
+    Long-press or swipe on a model card
+  </Step>
+  
+  <Step title="Confirm Deletion">
+    Confirm the deletion dialog
+  </Step>
+  
+  <Step title="Automatic Cleanup">
+    Off Grid removes:
+    - Main GGUF file
+    - Associated mmproj file (for vision models)
+    - Image model directories (for SD models)
+    - Database entries
+  </Step>
+</Steps>
+
+**What happens when you delete:**
+
+- Active model is unloaded from memory first
+- Files are permanently removed from device
+- Download metadata is cleared
+- If it's a vision model, both GGUF and mmproj are deleted
+- Gallery images generated with that model remain (not tied to model lifecycle)
+
+<Note>
+  Deletion is permanent and cannot be undone. You'll need to re-download the model if you want to use it again.
+</Note>
+
+## Model Types Reference
+
+### Text Models (GGUF)
+
+**Source**: HuggingFace repositories, local import
+
+**Formats**: Any llama.cpp-compatible GGUF model
+
+**Recommended models**:
+- Qwen 3 (0.6B, 1.6B, 3B, 7B)
+- Llama 3.2 (1B, 3B)
+- Gemma 3 (2B, 9B)
+- SmolLM3 (135M, 360M, 1.7B)
+- Phi-4 Mini (3.8B)
+
+### Vision Models (GGUF + mmproj)
+
+**Source**: HuggingFace (automatically downloads both files)
+
+**Recommended models**:
+- **SmolVLM-500M** - Fastest, ~7-10s inference on flagship devices
+- **SmolVLM-2.2B** - Better quality, ~10-15s inference
+- **Qwen3-VL-2B/8B** - Multilingual vision with thinking mode
+- **Gemma 3n E4B** - Vision + audio, mobile-optimized
+
+### Image Models
+
+**Android (MNN/QNN)**:
+- CPU models: Anything V5, Absolute Reality, QteaMix, ChilloutMix, CuteYukiMix (~1.2GB each)
+- NPU models: 20 models including DreamShaper, Realistic Vision (~1.0GB each)
+- QNN variants for Snapdragon 8 Gen 1/2/3+
+
+**iOS (Core ML)**:
+- SD 1.5 Palettized (~1GB, 6-bit quantized)
+- SD 2.1 Palettized (~1GB)
+- SDXL iOS (~2GB, 4-bit, ANE-optimized)
+- SD 1.5/2.1 Full (~4GB, fp16, fastest on ANE)
+
+## Performance Tips
+
+### Model Selection
+
+<Tip>
+  **For 4GB devices**: Stick to Q4_K_M quantization, models under 2B parameters
+  
+  **For 6-8GB devices**: Q4_K_M or Q5_K_M, models up to 3-7B parameters
+  
+  **For 8GB+ devices**: Q5_K_M or Q6_K, models up to 7-8B parameters
+</Tip>
+
+### Quantization Trade-offs
+
+From `ARCHITECTURE.md:950-961`:
+
+| Quantization | Bits | Quality | 7B Size | RAM Required | Use Case |
+|--------------|------|---------|---------|--------------|----------|
+| Q2_K | 2-3 bit | Lowest | ~2.5 GB | ~3.5 GB | Very constrained devices |
+| Q3_K_M | 3-4 bit | Low-Med | ~3.3 GB | ~4.5 GB | Budget devices, testing |
+| Q4_K_M | 4-5 bit | Good | ~4.0 GB | ~5.5 GB | **Recommended default** |
+| Q5_K_M | 5-6 bit | Very Good | ~5.0 GB | ~6.5 GB | Quality-focused users |
+| Q6_K | 6 bit | Excellent | ~6.0 GB | ~7.5 GB | Flagship devices |
+| Q8_0 | 8 bit | Near FP16 | ~7.5 GB | ~9.0 GB | Maximum quality |
+
+**Recommendation**: Q4_K_M provides the best balance. Q5_K_M for quality on devices with 8GB+ RAM.

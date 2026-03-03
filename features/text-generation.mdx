@@ -1,0 +1,270 @@
+---
+title: Text Generation
+description: Run powerful language models entirely on your device for chat, writing, coding, and more
+icon: message-square
+---
+
+## Overview
+
+Off Grid brings desktop-class LLM inference to your mobile device. Chat with Qwen 3, Llama 3.2, Gemma 3, Phi-4, and any GGUF-format model compatible with llama.cpp. All inference happens on-device using llama.rn native bindings — your conversations never leave your phone.
+
+## Supported Models
+
+Off Grid supports **any GGUF-format model** compatible with llama.cpp. The app includes curated recommendations filtered by your device's RAM:
+
+### Recommended Models
+
+- **Qwen 3** (0.6B, 3B, 7B) — Fast, multilingual, excellent reasoning
+- **Llama 3.2** (1B, 3B) — Meta's latest, optimized for mobile
+- **Gemma 3** (2B, 9B) — Google's efficient models with strong instruction following
+- **Phi-4 Mini** — Microsoft's compact model, great for coding
+- **SmolLM3** (135M, 360M, 1.7B) — Ultra-compact, blazing fast
+- **DeepSeek**, **Mistral**, **NVIDIA** models — Advanced options for high-end devices
+
+### Bring Your Own Model
+
+Import any `.gguf` file from your device storage:
+
+1. Download a GGUF model to your device (from Hugging Face, LM Studio, etc.)
+2. Go to **Models** → **Text Models** → **Import Local Model**
+3. Select your `.gguf` file from device storage
+4. The model will be validated and added to your library
+
+Imported models appear alongside downloaded models in the model selector.
+
+## How to Use
+
+### Selecting a Model
+
+1. Open the **Models** screen from the bottom navigation
+2. Browse recommended models or use advanced filters:
+   - **Organization** (Qwen, Meta, Google, Microsoft, etc.)
+   - **Size category** (tiny, small, medium, large)
+   - **Quantization level** (Q2_K, Q4_K_M, Q6_K, etc.)
+   - **Model type** (text, vision, code)
+   - **Credibility** (Official, Verified, Community)
+3. Tap a model to see details, RAM requirements, and download size
+4. Tap **Download** to get the model (background download via native DownloadManager)
+
+<Note>
+Off Grid checks available device RAM before every download. If a model is too large for your device, you'll see a warning with recommended alternatives.
+</Note>
+
+### Loading a Model
+
+Once downloaded:
+
+1. Open a conversation (or create a new one)
+2. Tap the model selector at the top of the chat screen
+3. Select your model from the list
+4. The model loads into memory (takes 5-15 seconds depending on size)
+5. Start chatting!
+
+<Warning>
+Loading a new model unloads the currently active model to free memory. Only one text model can be loaded at a time.
+</Warning>
+
+## Features
+
+### Streaming Responses
+
+All text generation streams in real-time — you see tokens as they're generated, just like ChatGPT. No waiting for the full response.
+
+### Markdown Rendering
+
+Responses are rendered with:
+- **Syntax highlighting** for code blocks
+- **Lists** (bulleted and numbered)
+- **Bold**, *italic*, and `inline code`
+- **Tables** and **links**
+
+### Thinking Mode
+
+Some models (like Qwen3-VL) support **thinking mode** — they show their reasoning process before the final answer. You'll see an animated thinking indicator while the model works through complex problems.
+
+### Message Queue
+
+Send new messages while the model is still generating:
+
+- The **Send** button stays active during generation
+- New messages are queued and shown in the toolbar
+- When generation completes, queued messages are processed automatically
+- Tap the **x** on the queue indicator to discard queued messages
+
+### Context Management
+
+Your conversation history is automatically included in each generation. When the context window is exceeded, older messages are truncated to fit.
+
+- **Context length** is configurable in settings (512 to 8192 tokens)
+- Longer context = more conversation memory, but slower and more RAM
+- Default: 2048 tokens (suitable for most conversations)
+
+## Performance
+
+### Speed Expectations
+
+| Device Class | Quantization | Speed (tok/s) | TTFT |
+|--------------|--------------|---------------|------|
+| **Flagship** (Snapdragon 8 Gen 2+, A17 Pro) | Q4_K_M | 15-30 tok/s | 0.5-2s |
+| **Mid-range** (Snapdragon 7 series) | Q4_K_M | 5-15 tok/s | 1-3s |
+| **Budget** | Q2_K / Q3_K_M | 3-10 tok/s | 2-5s |
+
+<Note>
+**TTFT** = Time to First Token (how long before you see the first word)
+
+**tok/s** = Tokens per second (generation speed after first token)
+</Note>
+
+### Factors Affecting Speed
+
+- **Model size** — Larger models are slower (7B slower than 3B)
+- **Quantization** — Lower bits = faster (Q4 faster than Q6)
+- **Context length** — More tokens in context = slower
+- **GPU acceleration** — Can boost speed 2-3x (see Settings below)
+- **Thread count** — More threads = faster (to a point)
+
+## Settings
+
+All settings are global and apply to every model. Access them via **Settings** → **Model Settings** → **Text Generation**.
+
+### Generation Settings
+
+<Accordion title="Temperature (0.0 - 2.0)">
+Controls creativity and randomness.
+
+- **0.0** — Deterministic, always picks most likely token (good for factual answers)
+- **0.7** — Balanced (default, good for most uses)
+- **1.5+** — Very creative, less coherent (good for creative writing)
+</Accordion>
+
+<Accordion title="Max Tokens (64 - 4096)">
+Maximum response length in tokens (~4 characters per token).
+
+- **256** — Short answers
+- **512** — Medium responses (default)
+- **2048+** — Long-form content
+
+Longer responses take more time and use more context window.
+</Accordion>
+
+<Accordion title="Top-p / Nucleus Sampling (0.1 - 1.0)">
+Controls diversity by sampling from the top probability mass.
+
+- **0.9** — Balanced (default)
+- **0.5** — More focused
+- **1.0** — Full diversity
+
+Usually combined with temperature for fine control.
+</Accordion>
+
+<Accordion title="Repeat Penalty (1.0 - 2.0)">
+Reduces repetition by penalizing recently used tokens.
+
+- **1.0** — No penalty
+- **1.1** — Light penalty (default)
+- **1.5+** — Strong penalty (can make output less natural)
+</Accordion>
+
+### Performance Settings
+
+<Accordion title="Context Length (512 - 8192 tokens)">
+How much conversation history the model can remember.
+
+- **512** — Short conversations, minimal RAM
+- **2048** — Standard (default, works on most devices)
+- **4096-8192** — Long conversations, requires 8GB+ RAM
+
+<Warning>
+Devices with ≤4GB RAM are automatically capped at 2048 tokens to prevent crashes.
+</Warning>
+</Accordion>
+
+<Accordion title="CPU Threads (1 - 12)">
+Number of CPU threads used for inference.
+
+- **4-6** — Optimal for most devices (default: 4)
+- **6-8** — Flagship devices
+- **1-3** — Battery saving
+
+Diminishing returns beyond 8 threads.
+</Accordion>
+
+<Accordion title="Batch Size (32 - 512)">
+Processing chunk size for prompt evaluation.
+
+- **128** — Faster first token
+- **256** — Balanced (default)
+- **512** — Better throughput, slower first token
+</Accordion>
+
+<Accordion title="GPU Acceleration">
+Offload model layers to GPU for faster inference.
+
+**Android:**
+- Uses OpenCL backend on Qualcomm Adreno GPUs
+- **GPU Layers** (0-99) — Number of layers to offload
+- Start with 0, incrementally increase
+- Experimental — can crash on some devices
+
+**iOS:**
+- Uses Metal backend on Apple GPUs
+- Automatic on devices with >4GB RAM
+- Disabled on ≤4GB devices to prevent crashes
+
+<Warning>
+GPU acceleration is **experimental**. Start with 0 layers and increase gradually. If the app crashes, reduce GPU layers in Settings after relaunch.
+</Warning>
+</Accordion>
+
+<Accordion title="Flash Attention">
+Faster inference algorithm.
+
+- **On** — Enabled by default
+- **Auto-disabled** when GPU layers > 0 on Android (llama.cpp compatibility)
+
+Leave on unless experiencing issues.
+</Accordion>
+
+<Accordion title="KV Cache Type">
+Cache quantization for memory/quality tradeoff.
+
+- **f16** — Full precision (default, highest quality, most RAM)
+- **q8_0** — 8-bit quantized (less RAM, minimal quality loss)
+- **q4_0** — 4-bit quantized (least RAM, noticeable quality loss)
+
+Use q8_0 or q4_0 on low-RAM devices to fit larger models.
+</Accordion>
+
+## Tips
+
+### Choosing the Right Model
+
+- **General chat:** Qwen 3 3B, Llama 3.2 3B
+- **Coding:** Phi-4 Mini, Qwen 3 Coder
+- **Speed:** SmolLM3 1.7B, Qwen 3 0.6B
+- **Quality:** Qwen 3 7B, Gemma 3 9B (requires 8GB+ RAM)
+
+### Optimizing Performance
+
+1. **Use Q4_K_M quantization** — Best balance of speed and quality
+2. **Enable GPU offloading** (if stable on your device)
+3. **Adjust threads** — 4-6 threads is optimal for most devices
+4. **Reduce context length** — 2048 is plenty for most chats
+5. **Lower KV cache quantization** — Use q8_0 to save RAM
+
+### Troubleshooting
+
+**Model won't load:**
+- Check available RAM in Settings → Device Info
+- Try a smaller model or lower quantization
+- Unload current model first
+
+**Generation is slow:**
+- Try a smaller model (3B instead of 7B)
+- Reduce context length
+- Increase thread count (if not already at 4-6)
+
+**App crashes on load:**
+- Disable GPU acceleration (set GPU layers to 0)
+- Reduce context length
+- Try a smaller model

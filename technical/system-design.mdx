@@ -1,0 +1,480 @@
+---
+title: 'System Design'
+description: 'Core design patterns and architectural decisions'
+---
+
+## Core Design Patterns
+
+### 1. Singleton Services
+
+All core services (`llmService`, `activeModelService`, `generationService`, `imageGenerationService`) are singleton instances exported directly from their modules.
+
+**Why:** Prevents duplicate model loading, concurrent inference conflicts, memory leaks from orphaned contexts, and state desynchronization.
+
+<CodeGroup>
+```typescript src/services/activeModelService/index.ts:29
+class ActiveModelService {
+  private loadedTextModelId: string | null = null;
+  private textLoadPromise: Promise<void> | null = null;
+
+  async loadTextModel(modelId: string) {
+    // Guard against concurrent loads
+    if (this.textLoadPromise) {
+      await this.textLoadPromise;
+      if (this.loadedTextModelId === modelId) return;
+    }
+
+    // Only one load at a time
+    this.loadingState.text = true;
+    this.textLoadPromise = doLoadTextModel(...);
+    await this.textLoadPromise;
+  }
+}
+
+// Single instance exported
+export const activeModelService = new ActiveModelService();
+```
+
+```typescript Usage across app
+import { activeModelService } from '../services/activeModelService';
+
+// All screens/components use the same instance
+await activeModelService.loadTextModel('qwen-0.6b');
+```
+</CodeGroup>
+
+**Benefits:**
+- **Thread safety:** Promise deduplication ensures only one load operation at a time
+- **Consistency:** All callers see the same loaded model state
+- **Resource safety:** Only one native context exists at a time
+
+---
+
+### 2. Background-Safe Orchestration
+
+`generationService` and `imageGenerationService` maintain state independently of React component lifecycle. Generation continues even when the user navigates away.
+
+**Implementation:** Listener pattern with immediate state delivery on subscription.
+
+<CodeGroup>
+```typescript src/services/generationService.ts:29
+class GenerationService {
+  private state: GenerationState = { isGenerating: false, ... };
+  private listeners: Set<GenerationListener> = new Set();
+
+  subscribe(listener: GenerationListener): () => void {
+    this.listeners.add(listener);
+    listener(this.getState()); // Immediate state on subscribe
+    return () => this.listeners.delete(listener);
+  }
+
+  private notifyListeners(): void {
+    const state = this.getState();
+    this.listeners.forEach(listener => listener(state));
+  }
+}
+```
+
+```typescript Screen lifecycle independence
+// ChatScreen mounts
+useEffect(() => {
+  const unsubscribe = generationService.subscribe(setGenState);
+  return unsubscribe;
+}, []);
+
+// User navigates to HomeScreen → ChatScreen unmounts
+// Generation continues in generationService
+// When user returns to ChatScreen, subscription receives current state
+```
+</CodeGroup>
+
+**Key Points:**
+- Services hold state in private fields (not React state)
+- Listeners are weakly held via cleanup functions
+- Subscribers receive current state immediately on mount
+- No memory leaks — cleanup functions remove listeners on unmount
+
+**Flow Example:**
+
+1. User starts generation in ChatScreen
+2. ChatScreen subscribes to `generationService`
+3. User navigates to HomeScreen → ChatScreen unmounts, unsubscribes
+4. Generation continues, service maintains state
+5. HomeScreen mounts, subscribes, immediately receives current state (progress 15/20)
+6. User navigates back to ChatScreen
+7. ChatScreen re-subscribes, receives current state (progress 18/20)
+8. Generation completes, all subscribers notified
+
+---
+
+### 3. Memory-First Loading Strategy
+
+All model loads check available RAM **before** proceeding. Prevents OOM crashes by blocking loads that would exceed safe limits.
+
+**RAM Budget:** 60% of device RAM
+
+**Estimation Multipliers:**
+- Text models: `fileSize × 1.5` (KV cache + activations)
+- Vision models: `(modelFileSize + mmProjSize) × 1.5`
+- Image models: `fileSize × 1.8` (MNN/QNN runtime overhead)
+
+<CodeGroup>
+```typescript src/services/activeModelService/memory.ts
+export async function checkMemoryForModel(
+  params: CheckMemoryParams
+): Promise<MemoryCheckResult> {
+  const { modelId, modelType, ids, lists } = params;
+  const model = findModel(modelId, modelType, lists);
+
+  // Estimate required RAM
+  const estimatedRAM = estimateModelMemory(model, modelType);
+
+  // Get device RAM budget (60% of total)
+  const deviceRAM = await hardware.getDeviceInfo();
+  const budget = (deviceRAM.totalMemory / (1024**3)) * 0.60;
+
+  // Check against currently loaded models
+  const currentlyLoaded = getCurrentlyLoadedMemoryGB(ids, lists);
+  const totalRequired = estimatedRAM + currentlyLoaded;
+
+  if (totalRequired > budget) {
+    return {
+      canLoad: false,
+      severity: 'critical',
+      message: `Cannot load ${model.name} (~${estimatedRAM.toFixed(1)}GB required) - would exceed device safe limit of ${budget.toFixed(1)}GB.`
+    };
+  }
+
+  return { canLoad: true, severity: 'ok', message: '' };
+}
+```
+
+```typescript Vision model estimation
+function estimateModelMemory(model: DownloadedModel, type: 'text'): number {
+  let totalSize = model.fileSize;
+
+  // Add mmproj overhead for vision models
+  if (model.isVisionModel && model.mmProjFileSize) {
+    totalSize += model.mmProjFileSize;
+  }
+
+  // Apply multiplier (1.5x for text, accounts for KV cache)
+  return (totalSize / (1024**3)) * 1.5;
+}
+```
+</CodeGroup>
+
+**User-Friendly Messages:**
+
+```
+⚠️  Warning: Loading Qwen3-7B-Q4_K_M will use ~5.2GB of 6.0GB budget (87%)
+❌  Cannot load Qwen3-7B-Q4_K_M (~5.5GB required) - would exceed device safe limit of 4.8GB. Unload current model or choose smaller.
+```
+
+**RAM-Aware Runtime Safeguards:**
+
+On low-RAM devices (≤4GB), llama.cpp can call `abort()` during Metal/OpenCL allocation, killing the app before JavaScript catches the error. To prevent this:
+
+<CodeGroup>
+```typescript src/services/llm.ts:95
+private async initWithAutoContext(
+  params: { baseParams: object; ctxLen: number; nGpuLayers: number }
+): Promise<{ context: LlamaContext; gpuAttemptFailed: boolean; actualLength: number }> {
+  const deviceInfo = await hardwareService.getDeviceInfo();
+
+  // Cap GPU layers based on device RAM
+  const safeGpuLayers = getGpuLayersForDevice(
+    deviceInfo.totalMemory,
+    params.nGpuLayers
+  );
+
+  if (safeGpuLayers !== params.nGpuLayers) {
+    logger.log(
+      `[LLM] Low RAM (${(deviceInfo.totalMemory / BYTES_PER_GB).toFixed(1)}GB), GPU layers ${params.nGpuLayers} → ${safeGpuLayers}`
+    );
+  }
+
+  // Load with safe GPU layer count
+  const initial = await initContextWithFallback(
+    params.baseParams,
+    params.ctxLen,
+    safeGpuLayers
+  );
+
+  return initial;
+}
+```
+
+```typescript src/services/llmHelpers.ts
+export function getGpuLayersForDevice(
+  totalMemoryBytes: number,
+  requestedLayers: number
+): number {
+  const totalMemoryGB = totalMemoryBytes / BYTES_PER_GB;
+
+  // Disable GPU on ≤4GB devices (Metal/OpenCL allocation can abort())
+  if (totalMemoryGB <= 4) {
+    return 0;
+  }
+
+  return requestedLayers;
+}
+
+export function getMaxContextForDevice(totalMemoryBytes: number): number {
+  const totalMemoryGB = totalMemoryBytes / BYTES_PER_GB;
+
+  if (totalMemoryGB <= 4) return 2048;
+  if (totalMemoryGB <= 6) return 2048;
+  if (totalMemoryGB <= 8) return 4096;
+  return 8192;
+}
+```
+</CodeGroup>
+
+| Device RAM | GPU Layers | Context Cap | CLIP GPU |
+|------------|------------|-------------|-----------|
+| ≤4GB       | 0 (CPU-only) | 2048      | Off      |
+| 4-6GB      | Requested  | 2048        | On       |
+| 6-8GB      | Requested  | 4096        | On       |
+| >8GB       | Requested  | 8192        | On       |
+
+---
+
+### 4. Combined Asset Tracking
+
+Vision models track both main GGUF and mmproj files as a single logical unit.
+
+**Why:** mmproj files (100-700MB) are downloaded separately but required for vision inference. Memory estimates must include both.
+
+<CodeGroup>
+```typescript src/types/index.ts
+interface DownloadedModel {
+  id: string;
+  filePath: string;
+  fileSize: number;
+
+  // Vision-specific
+  mmProjPath?: string;
+  mmProjFileSize?: number;
+  isVisionModel: boolean;
+}
+```
+
+```typescript Total size calculation
+const totalSize = model.fileSize + (model.mmProjFileSize || 0);
+const totalRAM = (totalSize / (1024**3)) * 1.5; // Both contribute to RAM estimate
+```
+
+```typescript src/services/llm.ts:54
+async loadModel(modelPath: string, mmProjPath?: string): Promise<void> {
+  // Load main GGUF model
+  await llmService.loadModel(modelPath);
+
+  // Initialize multimodal if mmproj provided
+  if (mmProjPath) {
+    await this.initializeMultimodal(mmProjPath);
+  }
+}
+```
+</CodeGroup>
+
+**Download Flow:**
+
+1. User selects vision model (e.g., SmolVLM-500M)
+2. System downloads main GGUF file
+3. System detects vision capability, downloads mmproj automatically
+4. Both files linked in store: `mmProjPath`, `mmProjFileSize`
+5. On load, both passed to llmService
+
+---
+
+### 5. State Cleanup Patterns
+
+After prompt enhancement (which uses `llmService`), explicit cleanup ensures text generation doesn't hang.
+
+**Why:** Prompt enhancement runs a separate LLM generation to expand simple prompts ("a dog" → detailed 75-word description). Without cleanup, the LLM service remains in "generating" state, blocking subsequent text generation.
+
+<CodeGroup>
+```typescript src/services/imageGenerationService.ts:147
+private async _resetLlmAfterEnhancement(): Promise<void> {
+  logger.log('[ImageGen] 🔄 Starting cleanup - generating:', llmService.isCurrentlyGenerating());
+  try {
+    // Stop generation flag, clear abort state
+    await llmService.stopGeneration();
+    logger.log('[ImageGen] ✓ stopGeneration() called');
+
+    // NOTE: KV cache NOT cleared to preserve vision inference speed
+    // Vision inference can be 30-60s slower if KV cache cleared after every enhancement
+
+    logger.log('[ImageGen] ✅ LLM service reset complete');
+  } catch (resetError) {
+    logger.error('[ImageGen] ❌ Failed to reset LLM service:', resetError);
+  }
+}
+```
+
+```typescript Prompt enhancement flow
+private async _enhancePrompt(params: GenerateImageParams): Promise<string> {
+  // 1. Call LLM with enhancement system prompt
+  let raw = await llmService.generateResponse(
+    buildEnhancementMessages(params.prompt, contextMessages),
+    (_token) => {}
+  );
+
+  // 2. Clean up LLM state
+  await this._resetLlmAfterEnhancement();
+
+  // 3. Return enhanced prompt
+  return raw || params.prompt;
+}
+```
+</CodeGroup>
+
+**Key Decision:** KV cache is NOT cleared after enhancement. Clearing the cache would invalidate all cached tokens, forcing full re-computation on the next vision inference. For large vision models, this adds 30-60 seconds to inference time.
+
+**Trade-off:**
+- ✅ Vision inference stays fast (cached tokens reused)
+- ⚠️ KV cache grows over time (cleared manually via settings or on model unload)
+
+---
+
+## Token Batching (Performance Optimization)
+
+Streaming token generation produces 10-50 tokens/second. Updating React state on every token causes excessive renders and frame drops.
+
+**Solution:** Batch tokens and flush to UI at a controlled rate (50ms intervals = ~20 updates/second).
+
+<CodeGroup>
+```typescript src/services/generationService.ts:43
+class GenerationService {
+  private tokenBuffer: string = '';
+  private flushTimer: ReturnType<typeof setTimeout> | null = null;
+  private static readonly FLUSH_INTERVAL_MS = 50; // ~20 updates/sec
+
+  private flushTokenBuffer(): void {
+    if (this.tokenBuffer) {
+      useChatStore.getState().appendToStreamingMessage(this.tokenBuffer);
+      this.tokenBuffer = '';
+    }
+    this.flushTimer = null;
+  }
+
+  private forceFlushTokens(): void {
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+    this.flushTokenBuffer();
+  }
+}
+```
+
+```typescript Token callback
+await llmService.generateResponse(
+  messages,
+  (token) => {
+    this.state.streamingContent += token;
+    this.tokenBuffer += token;
+
+    // Schedule flush if not already scheduled
+    if (!this.flushTimer) {
+      this.flushTimer = setTimeout(
+        () => this.flushTokenBuffer(),
+        GenerationService.FLUSH_INTERVAL_MS
+      );
+    }
+  },
+  () => {
+    // On complete: force flush remaining tokens
+    this.forceFlushTokens();
+  }
+);
+```
+</CodeGroup>
+
+**Before:**
+- 30 tok/s × 60fps = 1800 unnecessary renders/minute
+- Janky scrolling, high CPU usage
+
+**After:**
+- 20 UI updates/second regardless of generation speed
+- Smooth scrolling, low overhead
+
+---
+
+## Message Queue (Non-Blocking Input)
+
+Users can send messages while the LLM is still generating. Messages are queued and processed automatically after the current generation completes.
+
+<CodeGroup>
+```typescript src/services/generationService.ts:295
+enqueueMessage(entry: QueuedMessage): void {
+  this.state = {
+    ...this.state,
+    queuedMessages: [...this.state.queuedMessages, entry]
+  };
+  this.notifyListeners();
+}
+
+private processNextInQueue(): void {
+  if (this.state.queuedMessages.length === 0 || !this.queueProcessor) return;
+
+  // Aggregate all queued messages
+  const all = this.state.queuedMessages;
+  this.state = { ...this.state, queuedMessages: [] };
+  this.notifyListeners();
+
+  const combined: QueuedMessage = all.length === 1 ? all[0] : {
+    id: all[0].id,
+    conversationId: all[0].conversationId,
+    text: all.map(m => m.text).join('\n\n'),
+    attachments: all.flatMap(m => m.attachments || []),
+    messageText: all.map(m => m.messageText).join('\n\n'),
+  };
+
+  this.queueProcessor(combined).catch(e => {
+    logger.error('[GenerationService] Queue processor error:', e);
+  });
+}
+```
+
+```typescript ChatScreen registration
+useEffect(() => {
+  // Register queue processor callback
+  generationService.setQueueProcessor(async (item) => {
+    // Add aggregated user message to chat
+    chatStore.addMessage(item.conversationId, {
+      role: 'user',
+      content: item.messageText,
+      attachments: item.attachments,
+    });
+
+    // Start generation
+    await handleSendMessage(item.text, item.attachments);
+  });
+
+  return () => generationService.setQueueProcessor(null);
+}, []);
+```
+</CodeGroup>
+
+**Flow:**
+
+1. User sends "What is AI?" → Generation starts
+2. User sends "Explain neural networks" → Added to queue (count: 1)
+3. User sends "Give me an example" → Added to queue (count: 2)
+4. First generation completes
+5. Queue processor aggregates messages:
+   ```
+   Explain neural networks
+
+   Give me an example
+   ```
+6. Combined message sent to LLM
+
+**UI Indicators:**
+
+- Send button stays active during generation
+- Stop button visible alongside send button
+- Queue count badge shows "2 queued messages"
+- Tap badge to clear queue

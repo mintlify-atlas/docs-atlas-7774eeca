@@ -1,0 +1,310 @@
+---
+title: Image Generation
+description: Generate images with on-device Stable Diffusion using NPU, ANE, or CPU acceleration
+icon: image
+---
+
+## Overview
+
+Off Grid brings Stable Diffusion to your mobile device with platform-native acceleration. Generate images from text prompts entirely on-device — no cloud, no API keys, no usage limits. Just type what you want to see and watch it appear in real-time.
+
+## Platform Differences
+
+Off Grid uses different backends optimized for each platform's hardware:
+
+<Tabs>
+  <Tab title="Android">
+    ### MNN Backend (CPU)
+    
+    - **Alibaba's MNN framework** — Optimized for ARM64 CPUs
+    - **Works on all devices** — No special hardware required
+    - **Performance:** ~15s for 512×512 @ 20 steps (Snapdragon 8 Gen 3)
+    - **Models:** 5 pre-converted models (~1.2GB each)
+    
+    ### QNN Backend (NPU)
+    
+    - **Qualcomm AI Engine** — Hardware NPU acceleration
+    - **Requirements:** Snapdragon 8 Gen 1+ with QNN support
+    - **Performance:** ~5-10s for 512×512 @ 20 steps (chipset-dependent)
+    - **Models:** 20 pre-converted models (~1.0GB each)
+    - **Variants:** `min` (non-flagship), `8gen1`, `8gen2` (8 Gen 2/3/4/5)
+    
+    Off Grid **automatically detects** NPU availability and falls back to MNN if not supported.
+  </Tab>
+  
+  <Tab title="iOS">
+    ### Core ML Backend (ANE + CPU)
+    
+    - **Apple's ml-stable-diffusion** — Neural Engine (ANE) acceleration
+    - **DPM-Solver scheduler** — Faster convergence, better quality at fewer steps
+    - **Performance:** ~8-15s for 512×512 @ 20 steps (A17 Pro/M-series)
+    - **Palettized models (~1GB):** 6-bit quantized, 2x slower due to dequantization
+    - **Full precision models (~4GB):** fp16, fastest on ANE
+    
+    All models use `.cpuAndNeuralEngine` compute units for maximum speed.
+  </Tab>
+</Tabs>
+
+## Available Models
+
+### Android (MNN/QNN)
+
+**CPU Models (MNN):**
+- Anything V5
+- Absolute Reality
+- QteaMix
+- ChilloutMix
+- CuteYukiMix
+
+**NPU Models (QNN):**
+All CPU models plus:
+- DreamShaper
+- Realistic Vision
+- MajicmixRealistic
+- And 12 more variants optimized for Snapdragon 8 Gen 1/2/3
+
+### iOS (Core ML)
+
+**Palettized (~1GB, 6-bit):**
+- SD 1.5 Palettized (512×512)
+- SD 2.1 Palettized (512×512)
+- SDXL iOS (768×768, 4-bit mixed-bit, ANE-optimized)
+
+**Full Precision (~4GB, fp16):**
+- SD 1.5 Full (512×512)
+- SD 2.1 Base Full (512×512)
+
+<Note>
+Palettized models are quantized to save storage and RAM but are ~2x slower due to runtime dequantization. Full precision models are fastest on ANE but require 4GB storage each.
+</Note>
+
+## How to Use
+
+### 1. Download an Image Model
+
+1. Go to **Models** → **Image Models**
+2. Select a model (filtered by your device's backend automatically)
+3. Tap **Download** and wait for it to complete
+4. The model is ready to use (no loading step required)
+
+### 2. Generate an Image
+
+There are two ways to trigger image generation:
+
+<Tabs>
+  <Tab title="Auto Detection">
+    Off Grid automatically detects when you want an image:
+    
+    1. Open a conversation
+    2. Type a prompt like "Draw a sunset over mountains"
+    3. Send
+    4. Off Grid classifies your intent and generates an image
+    
+    **Detection methods:**
+    - **Pattern mode** (fast) — Keyword matching ("draw", "generate", "create image")
+    - **LLM mode** (accurate) — Uses your loaded text model to classify intent
+    
+    Configure in **Settings** → **Model Settings** → **Image Generation**.
+  </Tab>
+  
+  <Tab title="Manual Toggle">
+    Force image generation mode:
+    
+    1. Tap the **image mode toggle** in the chat input
+    2. Type your prompt (any text will generate an image)
+    3. Send
+    4. The toggle resets after sending
+    
+    Useful when auto-detection misclassifies your intent.
+  </Tab>
+</Tabs>
+
+### 3. Watch the Preview
+
+Off Grid shows **real-time preview** as the image generates:
+
+- Preview updates every N steps (configurable)
+- Shows denoising progress from noise → final image
+- Generation continues in the background if you navigate away
+
+### 4. Save or Share
+
+Once complete:
+- Tap the image to view full-screen
+- Long-press to save to device gallery
+- Share directly from the chat
+
+## Settings
+
+Access via **Settings** → **Model Settings** → **Image Generation**.
+
+<Accordion title="Steps (4 - 50)">
+Number of denoising iterations.
+
+- **4-10** — Fast, lower quality (good for quick experiments)
+- **20** — Default, balanced quality/speed
+- **30-50** — Higher quality, slower (diminishing returns after 30)
+
+More steps = better detail but longer generation time.
+</Accordion>
+
+<Accordion title="Guidance Scale (1 - 20)">
+How closely the model follows your prompt.
+
+- **1-5** — More creative, less literal
+- **7.5** — Default, good prompt adherence
+- **10-20** — Very literal, less creative
+
+Higher guidance = stronger prompt influence.
+</Accordion>
+
+<Accordion title="Seed">
+Controls randomness for reproducibility.
+
+- **Random** (default) — Different result every time
+- **Fixed** — Same seed = same image (useful for iterations)
+
+Set a fixed seed to experiment with different prompts on the same composition.
+</Accordion>
+
+<Accordion title="Resolution">
+Output image size.
+
+- **256×256** — Fastest, lowest quality
+- **512×512** — Default, best balance
+- **768×768** — SDXL only (iOS)
+
+Higher resolution = more VRAM and slower generation.
+</Accordion>
+
+<Accordion title="Preview Interval (1 - 10 steps)">
+How often the preview updates.
+
+- **1** — Update every step (smooth but more overhead)
+- **5** — Default, good balance
+- **10** — Fewer updates, slightly faster
+</Accordion>
+
+<Accordion title="Threads (1 - 8)">
+CPU thread count for image generation.
+
+- **4** — Default, works on most devices
+- **6-8** — Flagship devices, faster generation
+- **1-2** — Battery saving
+
+Only affects CPU/MNN backend. NPU and ANE ignore this setting.
+</Accordion>
+
+## Prompt Enhancement
+
+Off Grid can **automatically enhance** simple prompts into detailed Stable Diffusion prompts using your loaded text model.
+
+### How It Works
+
+1. You type: "Draw a dog"
+2. Off Grid sends this to your text model with a special system prompt
+3. The model expands it to: "A golden retriever with soft, fluffy fur, sitting gracefully in a sunlit meadow, detailed fur texture, natural lighting, photorealistic, 8k, high quality"
+4. The enhanced prompt is sent to Stable Diffusion
+
+### Enable/Disable
+
+- Toggle in **Settings** → **Model Settings** → **Image Generation** → **Enhance Prompts**
+- **Requires a loaded text model** — if no model is loaded, enhancement is skipped
+- Adds ~5-10s to generation time (LLM inference + reset)
+
+<Note>
+After enhancement, Off Grid explicitly calls `stopGeneration()` to reset the LLM state. The KV cache is **not cleared** to preserve vision inference performance if you're using a vision model.
+</Note>
+
+### Tips for Better Prompts
+
+- **Be specific** — "Golden retriever puppy" > "dog"
+- **Add style descriptors** — "oil painting", "photorealistic", "anime style"
+- **Lighting and mood** — "sunset lighting", "moody", "bright and cheerful"
+- **Quality modifiers** — "8k", "highly detailed", "professional photography"
+- **Use prompt enhancement** for quick iterations
+
+## Technical Pipeline
+
+How Stable Diffusion works on-device:
+
+```
+Text Prompt → CLIP Tokenizer → Text Encoder (embeddings)
+  → Scheduler (DPM-Solver/Euler) ↔ UNet (denoising, iterative)
+  → VAE Decoder → 512×512 Image
+```
+
+1. **Text encoding** — Your prompt is tokenized and encoded into embeddings
+2. **Denoising loop** — UNet iteratively denoises random noise guided by your prompt
+3. **Decoding** — VAE decoder converts latents to pixel space
+
+### Background Generation
+
+Image generation runs via `imageGenerationService`, a **background-safe singleton**:
+
+- Generation continues when you navigate away from the chat
+- Service maintains state independently of UI components
+- Screens subscribe on mount and receive current state immediately
+- Progress and previews persist across screen transitions
+
+### Memory Usage
+
+Image models require significant RAM:
+
+- **RAM estimate** = file size × 1.8 (MNN/QNN runtime overhead)
+- SD 1.5 Full (4GB file) ≈ 7.2GB RAM required
+- SD 1.5 Palettized (1GB file) ≈ 1.8GB RAM required
+
+Off Grid checks available RAM before generation and blocks if insufficient.
+
+## Performance
+
+### Generation Times (512×512 @ 20 steps)
+
+| Platform | Backend | Device | Time |
+|----------|---------|--------|------|
+| **Android** | MNN (CPU) | Snapdragon 8 Gen 3 | ~15s |
+| **Android** | MNN (CPU) | Snapdragon 7 series | ~30s |
+| **Android** | QNN (NPU) | Snapdragon 8 Gen 2+ | ~5-10s |
+| **iOS** | Core ML (ANE) | A17 Pro / M-series | ~8-15s |
+| **iOS** | Core ML (ANE) | Palettized models | ~16-30s |
+
+### Optimization Tips
+
+1. **Use NPU/ANE models** — Fastest on supported devices
+2. **Reduce steps** — 15-20 steps is usually sufficient
+3. **Lower guidance scale** — 5-7 works well for most prompts
+4. **Use palettized models** — Faster download, less storage (but slower generation)
+5. **Reduce threads on low-end devices** — Prevents thermal throttling
+
+## Troubleshooting
+
+**Generation is very slow:**
+- Check if you're using CPU (MNN) instead of NPU (QNN) — QNN is 2-3x faster
+- Reduce steps to 15-20
+- Lower resolution to 256×256 for quick experiments
+
+**Out of memory error:**
+- Use palettized models instead of full precision
+- Close other apps to free RAM
+- Check available RAM in Settings → Device Info
+
+**Preview not updating:**
+- Increase preview interval (e.g., to 10 steps)
+- Check if generation is still running (progress indicator)
+
+**Enhanced prompts causing hangs:**
+- Disable prompt enhancement temporarily
+- Ensure you have a text model loaded
+- Check logs for LLM state reset issues
+
+## Privacy
+
+All image generation happens **100% on-device**:
+
+- Your prompts **never leave your device**
+- No cloud API calls
+- No usage tracking
+- Works completely offline (after model download)
+
+You can enable airplane mode and generate images indefinitely.

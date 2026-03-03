@@ -1,0 +1,207 @@
+---
+title: Installation
+description: Install Off Grid on iOS, Android, or macOS. Get started with privacy-first offline AI in minutes.
+---
+
+# Installation
+
+Off Grid is available on iOS, Android, and macOS (via Mac Catalyst). Choose your platform below.
+
+## iOS
+
+<Steps>
+  <Step title="Download from App Store">
+    Download Off Grid from the App Store:
+
+    [Download on the App Store](https://apps.apple.com/us/app/off-grid-local-ai/id6759299882)
+
+    <Note>
+      Requires iOS 14.0 or later. Compatible with iPhone, iPad, and iPod touch.
+    </Note>
+  </Step>
+
+  <Step title="Launch the app">
+    Open Off Grid from your home screen. You'll see a brief onboarding that introduces the core features.
+  </Step>
+
+  <Step title="Download your first model">
+    Browse the curated model library and download your first AI model. See the [Quick Start guide](/quickstart) for recommendations.
+  </Step>
+</Steps>
+
+### macOS Compatibility
+
+<Note>
+  The iOS App Store version runs natively on Apple Silicon Macs via **Mac Catalyst / iPad compatibility**.
+  
+  Simply install from the App Store on your Mac (M1/M2/M3/M4) and launch like any other app.
+</Note>
+
+## Android
+
+### Option 1: Google Play Store (Recommended)
+
+<Steps>
+  <Step title="Download from Google Play">
+    Download Off Grid from Google Play:
+
+    [Get it on Google Play](https://play.google.com/store/apps/details?id=ai.offgridmobile)
+
+    <Note>
+      Requires Android 8.0 (API 26) or later. Recommended: Android 10+ with 6GB+ RAM.
+    </Note>
+  </Step>
+
+  <Step title="Grant permissions">
+    On first launch, grant the following permissions:
+    - **Storage** (for model downloads and file attachments)
+    - **Camera** (optional, for vision AI)
+    - **Microphone** (optional, for voice input)
+  </Step>
+
+  <Step title="Download your first model">
+    Browse the curated model library and download your first AI model. See the [Quick Start guide](/quickstart) for recommendations.
+  </Step>
+</Steps>
+
+### Option 2: Direct APK Download
+
+If you prefer to install manually or don't use Google Play:
+
+<Steps>
+  <Step title="Download the latest APK">
+    Grab the latest APK from [**GitHub Releases**](https://github.com/alichherawalla/off-grid-mobile/releases/latest).
+
+    Look for the file named `off-grid-vX.X.X.apk` in the Assets section.
+  </Step>
+
+  <Step title="Enable unknown sources">
+    Go to **Settings → Security → Unknown Sources** and enable installation from unknown sources.
+
+    <Warning>
+      Only download APKs from the official GitHub repository. Verify the signature matches the official release.
+    </Warning>
+  </Step>
+
+  <Step title="Install the APK">
+    Open the downloaded APK file and tap **Install**.
+  </Step>
+
+  <Step title="Launch and grant permissions">
+    Open Off Grid and grant the required permissions (storage, camera, microphone).
+  </Step>
+</Steps>
+
+## Device Requirements
+
+### Minimum Requirements
+
+| Platform | OS Version | RAM | Storage |
+|----------|-----------|-----|----------|
+| iOS | iOS 14.0+ | 4GB | 2GB free |
+| Android | Android 8.0+ (API 26) | 4GB | 2GB free |
+| macOS | macOS 11+ (Apple Silicon) | 8GB | 2GB free |
+
+### Recommended Specifications
+
+For the best experience:
+
+- **RAM**: 6GB+ (enables larger models and longer context windows)
+- **Storage**: 10GB+ free (models range from 500MB to 8GB)
+- **Processor**:
+  - Android: Snapdragon 8 Gen 1+ (NPU acceleration for image generation)
+  - iOS: A15+ or M1+ (Neural Engine acceleration)
+
+<Warning>
+  **Low-RAM Devices (≤4GB)**
+  
+  On devices with 4GB RAM or less (e.g., iPhone XS, older Android phones):
+  - GPU acceleration is automatically disabled to prevent crashes
+  - Context length is capped at 2048 tokens
+  - Stick to smaller models (Q4_K_M quantization, under 3B parameters)
+</Warning>
+
+## Storage Considerations
+
+### Model Sizes
+
+AI models can be large. Here's what to expect:
+
+| Model Type | Typical Size | Example |
+|------------|-------------|----------|
+| Small text models | 500MB - 2GB | Qwen3 0.6B, SmolLM3 1.7B |
+| Medium text models | 2GB - 4GB | Llama 3.2 3B, Phi-4 |
+| Large text models | 4GB - 8GB | Qwen3 7B, Llama 3.2 8B |
+| Vision models | 600MB - 5GB | SmolVLM 500M + mmproj (~600MB) |
+| Image models (Android) | 1GB - 1.2GB | DreamShaper (QNN), Anything V5 (MNN) |
+| Image models (iOS) | 1GB - 4GB | SD 1.5 Palettized (~1GB), SD 1.5 Full (~4GB) |
+| Whisper models | 40MB - 150MB | Tiny (40MB), Base (75MB), Small (150MB) |
+
+<Note>
+  You can delete models at any time from **Settings → Storage Management** to free up space.
+</Note>
+
+## First Launch Experience
+
+When you first open Off Grid:
+
+<Steps>
+  <Step title="Onboarding">
+    A brief walkthrough introduces you to:
+    - Privacy-first architecture (everything runs on-device)
+    - Main features (text, image, vision, voice)
+    - How to download models
+  </Step>
+
+  <Step title="Model Library">
+    You'll be taken to the **Models** screen where you can:
+    - Browse curated recommendations filtered by your device's RAM
+    - Download your first model (Qwen3 0.6B recommended for first-time users)
+    - Import your own `.gguf` files from device storage
+  </Step>
+
+  <Step title="First Conversation">
+    After downloading a model:
+    - Tap **New Chat** from the home screen
+    - Your downloaded model is automatically loaded
+    - Start typing to begin your first conversation
+  </Step>
+</Steps>
+
+## Building from Source (Advanced)
+
+If you want to build Off Grid from source:
+
+```bash
+git clone https://github.com/alichherawalla/off-grid-mobile.git
+cd off-grid-mobile
+npm install
+
+# Android
+cd android && ./gradlew clean && cd ..
+npm run android
+
+# iOS
+cd ios && pod install && cd ..
+npm run ios
+```
+
+**Requirements:**
+- Node.js 20+
+- JDK 17 / Android SDK 36 (Android)
+- Xcode 15+ (iOS)
+
+<Note>
+  See the [full build guide](https://github.com/alichherawalla/off-grid-mobile/blob/main/docs/ARCHITECTURE.md#building-from-source) for detailed instructions.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Download your first model and start chatting
+  </Card>
+  <Card title="Introduction" icon="book-open" href="/introduction">
+    Learn more about Off Grid's capabilities
+  </Card>
+</CardGroup>
